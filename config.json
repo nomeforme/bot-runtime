@@ -40,6 +40,116 @@
         "maxCalls": 10,
         "timeoutSeconds": 300
       }
+    },
+    {
+      "name": "claude-sonnet-4-6",
+      "model": "claude-sonnet-4-6",
+      "prompt": "Standard",
+      "max_tokens": 1024,
+      "tools": ["fetch"],
+      "mcp": ["everything"],
+      "skill_paths": [
+        "/workspace/skills/connectome-ontology",
+        "/workspace/pi-skills/brave-search"
+      ]
+    },
+    {
+      "name": "claude-3-opus",
+      "model": "claude-3-opus-20240229",
+      "prompt": "Standard",
+      "max_tokens": 1024,
+      "tools": [],
+      "skip_identity_prompt": false
+    },
+    {
+      "name": "claude-3-sonnet",
+      "model": "us.anthropic.claude-3-sonnet-20240229-v1:0",
+      "prompt": "Standard",
+      "max_tokens": 1024,
+      "prompt_caching": false,
+      "tools": ["fetch"]
+    },
+    {
+      "name": "claude-sonnet-4-5",
+      "model": "claude-sonnet-4-5-20250929",
+      "prompt": "Standard",
+      "max_tokens": 1024,
+      "tools": ["fetch"]
+    },
+    {
+      "name": "claude-opus-4-5",
+      "model": "claude-opus-4-5-20251101",
+      "prompt": "Standard",
+      "max_tokens": 1024,
+      "tools": ["fetch"],
+      "mcp": ["everything"]
+    },
+    {
+      "name": "claude-opus-4",
+      "model": "claude-opus-4-20250514",
+      "prompt": "Standard",
+      "max_tokens": 1024,
+      "tools": ["fetch"]
+    },
+    {
+      "name": "claude-haiku-4-5",
+      "model": "claude-haiku-4-5-20251001",
+      "prompt": "Standard",
+      "max_tokens": 1024,
+      "tools": ["fetch"]
+    },
+    {
+      "name": "claude-3-5-sonnet",
+      "model": "us.anthropic.claude-3-5-sonnet-20240620-v1:0",
+      "prompt": "Standard",
+      "max_tokens": 1024,
+      "prompt_caching": false,
+      "tools": ["fetch"]
+    },
+    {
+      "name": "claude-3-6-sonnet",
+      "model": "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+      "prompt": "Standard",
+      "max_tokens": 1024,
+      "prompt_caching": false,
+      "tools": ["fetch"]
+    },
+    {
+      "name": "claude-sonnet-4",
+      "model": "claude-sonnet-4-20250514",
+      "prompt": "Standard",
+      "max_tokens": 1024,
+      "tools": ["fetch"]
+    },
+    {
+      "name": "claude-opus-4-1",
+      "model": "claude-opus-4-1-20250805",
+      "prompt": "Standard",
+      "max_tokens": 1024,
+      "tools": ["fetch"]
+    },
+    {
+      "name": "claude-3-5-haiku",
+      "model": "us.anthropic.claude-3-5-haiku-20241022-v1:0",
+      "prompt": "Standard",
+      "max_tokens": 1024,
+      "prompt_caching": false,
+      "tools": ["fetch"]
+    },
+    {
+      "name": "claude-3-haiku",
+      "model": "claude-3-haiku-20240307",
+      "prompt": "Standard",
+      "max_tokens": 1024,
+      "tools": ["fetch"]
+    },
+    {
+      "name": "claude-3-7-sonnet",
+      "model": "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+      "prompt": "Standard",
+      "max_tokens": 1024,
+      "prompt_caching": false,
+      "tools": ["fetch"]
     }
   ],
   "max_conversation_frames": 100,

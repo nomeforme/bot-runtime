@@ -238,6 +238,12 @@ export class BotRuntime {
     const streamId = activationFacet.streamId;
     const state = activationFacet.state || {};
 
+    // Filter: only handle activations targeted at this bot
+    const targetBot = state.metadata?.targetBot;
+    if (targetBot && targetBot !== this.config.name) {
+      return;
+    }
+
     const activation: UnifiedActivation = {
       streamId,
       platformContext: {
