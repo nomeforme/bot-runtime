@@ -3,3 +3,7 @@ dist/
 *.tsbuildinfo
 .env
 .env.*
+
+.turbo/
+.claude/
+.gitnexus

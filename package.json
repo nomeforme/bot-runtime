@@ -3,14 +3,23 @@
   "version": "0.2.0",
   "description": "Standalone bot runtime — pure agent brain, receives activations via gRPC",
   "type": "module",
-  "main": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "scripts": {
-    "start": "tsx src/entry.ts",
-    "typecheck": "tsc --noEmit"
+    "build": "tsc --build",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
+    "typecheck": "tsc --noEmit",
+    "start": "tsx src/entry.ts"
   },
   "dependencies": {
-    "@connectome/agent-core": "file:../connectome-agent-core",
-    "@connectome/grpc-common": "file:../connectome-grpc-common"
+    "@connectome/agent-core": "workspace:*",
+    "@connectome/grpc-common": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
