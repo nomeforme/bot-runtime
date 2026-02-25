@@ -1,0 +1,49 @@
+{
+  "mcp_servers": [
+    {
+      "name": "everything",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-everything"]
+    }
+  ],
+  "tool_configs": [
+    {
+      "type": "http",
+      "name": "fetch",
+      "description": "Fetch content from a URL. Use this to retrieve web pages, APIs, or any HTTP-accessible content."
+    },
+    {
+      "type": "cli",
+      "name": "polymarket",
+      "binary": "polymarket",
+      "description": "Query Polymarket prediction markets. Key commands:\n- markets list [--limit N] [--active true]\n- markets search <query> [--limit N]\n- markets get <id-or-slug>\n- events list [--tag TAG] [--limit N]\n- events get <id>\n- clob price <token_id> --side buy|sell\n- clob midpoint <token_id>\n- clob book <token_id>\n- clob price-history <token_id> --interval 1d --fidelity 100\n- data leaderboard [--period month] [--limit N]\n- tags list\n- sports list\nAll output is JSON.",
+      "default_args": ["-o", "json"],
+      "allowed_subcommands": ["markets", "events", "clob", "data", "tags", "series", "comments", "profiles", "sports", "status"],
+      "timeout_ms": 30000
+    }
+  ],
+  "bots": [
+    {
+      "name": "claude-opus-4-6",
+      "model": "claude-opus-4-6",
+      "prompt": "Standard",
+      "max_tokens": 1024,
+      "tools": ["fetch", "polymarket"],
+      "mcp": ["everything"],
+      "skill_paths": [
+        "/workspace/skills/connectome-ontology",
+        "/workspace/pi-skills/brave-search"
+      ],
+      "rlm": {
+        "maxDepth": 2,
+        "maxCalls": 10,
+        "timeoutSeconds": 300
+      }
+    }
+  ],
+  "max_conversation_frames": 100,
+  "max_bot_mentions_per_conversation": 1,
+  "random_reply_chance": 200,
+  "max_message_length": 2000
+}
