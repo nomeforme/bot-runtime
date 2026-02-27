@@ -19,9 +19,13 @@ import {
   resolveModel,
 } from '@connectome/agent-core';
 import type { ToolHandler, UnifiedActivation } from '@connectome/agent-core';
-import type { BotRuntimeConfig, ToolConfig, CliToolConfig, HttpToolConfig } from './bot-config.js';
+import type { BotRuntimeConfig, ToolConfig, CliToolConfig, HttpToolConfig, TerminalToolConfig } from './bot-config.js';
 import { ConnectomeBridge } from './connectome-bridge.js';
 import { NullPlatformAdapter } from './adapters/null-adapter.js';
+import { ProcessRegistry } from './process-registry.js';
+import { createTerminalTool } from './tools/terminal-tool.js';
+import { createProcessTool } from './tools/process-tool.js';
+import { createDelegateTool } from './tools/delegate-tool.js';
 
 export class BotRuntime {
   private config: BotRuntimeConfig;
@@ -30,6 +34,7 @@ export class BotRuntime {
   private effector?: ConnectomeEffector;
   private bridge?: ConnectomeBridge;
   private mcpManager?: MCPManager;
+  private processRegistry: ProcessRegistry;
   private agentId: string;
   private unsubscribeActivations?: () => void;
 
@@ -43,6 +48,8 @@ export class BotRuntime {
       port: config.connectome_port,
       clientId: `bot-${this.agentId}`,
     });
+
+    this.processRegistry = new ProcessRegistry();
   }
 
   // ---------------------------------------------------------------------------
@@ -136,6 +143,9 @@ export class BotRuntime {
       this.unsubscribeActivations();
       this.unsubscribeActivations = undefined;
     }
+
+    // Kill all managed processes
+    this.processRegistry.destroy();
 
     // Disconnect MCP servers
     if (this.mcpManager) {
@@ -279,7 +289,7 @@ export class BotRuntime {
         console.warn(`[BotRuntime:${this.config.name}] Tool "${toolName}" not found in tool_configs, skipping`);
         continue;
       }
-      toolHandlers.push(createToolFromConfig(toolConfig));
+      toolHandlers.push(this.createToolFromConfig(toolConfig));
       console.log(`[BotRuntime:${this.config.name}] ${toolConfig.type} tool "${toolName}" enabled`);
     }
 
@@ -302,20 +312,29 @@ export class BotRuntime {
 
     return toolHandlers;
   }
-}
 
-// ---------------------------------------------------------------------------
-// Tool factory — dispatches by ToolConfig.type
-// ---------------------------------------------------------------------------
-
-function createToolFromConfig(config: ToolConfig): ToolHandler {
-  switch (config.type) {
-    case 'cli':  return createCliTool(config);
-    case 'http': return createHttpTool(config);
-    default:
-      throw new Error(`Unknown tool type: ${(config as any).type}`);
+  /** Dispatch tool creation by config type, with access to runtime instances */
+  private createToolFromConfig(config: ToolConfig): ToolHandler {
+    switch (config.type) {
+      case 'cli':  return createCliTool(config);
+      case 'http': return createHttpTool(config);
+      case 'terminal':
+        // Differentiate terminal vs process by name
+        if (config.name === 'process') {
+          return createProcessTool(config, this.processRegistry);
+        }
+        return createTerminalTool(config, this.processRegistry);
+      case 'delegate':
+        return createDelegateTool(config, this.grpcClient, this.config.name, this.agentId);
+      default:
+        throw new Error(`Unknown tool type: ${(config as any).type}`);
+    }
   }
 }
+
+// ---------------------------------------------------------------------------
+// Standalone tool factories (cli, http) — no runtime dependencies
+// ---------------------------------------------------------------------------
 
 /** HTTP fetch tool — config-driven replacement for the old hardcoded createFetchTool */
 function createHttpTool(config: HttpToolConfig): ToolHandler {

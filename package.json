@@ -19,7 +19,8 @@
   },
   "dependencies": {
     "@connectome/agent-core": "workspace:*",
-    "@connectome/grpc-common": "workspace:*"
+    "@connectome/grpc-common": "workspace:*",
+    "node-pty": "^1.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

@@ -47,8 +47,32 @@ export interface HttpToolConfig {
   max_response_length?: number;
 }
 
+/** Terminal tool: PTY-based shell execution */
+export interface TerminalToolConfig {
+  type: 'terminal';
+  /** Unique name (e.g. "terminal" or "process") */
+  name: string;
+  /** Description shown to the agent */
+  description: string;
+  /** Default working directory (default: process.cwd()) */
+  default_cwd?: string;
+  /** Execution timeout in ms (default 120000) */
+  timeout_ms?: number;
+  /** Max output characters to return (default 50000) */
+  max_output_chars?: number;
+}
+
+/** Delegate tool: cross-bot task delegation via VEIL activations */
+export interface DelegateToolConfig {
+  type: 'delegate';
+  /** Unique name (e.g. "delegate") */
+  name: string;
+  /** Description shown to the agent */
+  description: string;
+}
+
 /** Union of all tool config types */
-export type ToolConfig = CliToolConfig | HttpToolConfig;
+export type ToolConfig = CliToolConfig | HttpToolConfig | TerminalToolConfig | DelegateToolConfig;
 
 // ---------------------------------------------------------------------------
 // Config types
