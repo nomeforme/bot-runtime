@@ -5,6 +5,14 @@
       "transport": "stdio",
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-everything"]
+    },
+    {
+      "name": "wolfram",
+      "transport": "streamable-http",
+      "url": "https://services.wolfram.com/api/mcp",
+      "headers": {
+        "Authorization": "Bearer ${WOLFRAM_API_KEY}"
+      }
     }
   ],
   "tool_configs": [
@@ -30,7 +38,7 @@
       "prompt": "Standard",
       "max_tokens": 1024,
       "tools": ["fetch", "polymarket"],
-      "mcp": ["everything"],
+      "mcp": ["everything", "wolfram"],
       "skill_paths": [
         "/workspace/skills/connectome-ontology",
         "/workspace/pi-skills/brave-search"
