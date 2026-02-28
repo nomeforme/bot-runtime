@@ -81,18 +81,22 @@ export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
 
   async recordSpeech(
     content: string,
-    metadata: { agentId: string; agentName: string; streamId: string },
+    metadata: { agentId: string; agentName: string; streamId: string; attachments?: Array<{ id: string; contentType: string; data: string; filename?: string; sizeBytes?: number }> },
   ): Promise<void> {
     try {
+      const payload: Record<string, any> = {
+        content,
+        agentId: metadata.agentId,
+        agentName: metadata.agentName,
+        streamId: metadata.streamId,
+        timestamp: Date.now(),
+      };
+      if (metadata.attachments?.length) {
+        payload.attachments = metadata.attachments;
+      }
       await this.client.emitEvent(
         'agent:speech',
-        {
-          content,
-          agentId: metadata.agentId,
-          agentName: metadata.agentName,
-          streamId: metadata.streamId,
-          timestamp: Date.now(),
-        },
+        payload,
         { priority: 'normal', waitForFrame: true },
       );
       console.log(`[ConnectomeBridge:${this.agentName}] Recorded speech in server state`);

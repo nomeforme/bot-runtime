@@ -26,6 +26,7 @@ import { ProcessRegistry } from './process-registry.js';
 import { createTerminalTool, type TerminalVeilContext } from './tools/terminal-tool.js';
 import { createProcessTool } from './tools/process-tool.js';
 import { createDelegateTool, type DelegateActivationContext } from './tools/delegate-tool.js';
+import { createAttachTool } from './tools/attach-tool.js';
 
 export class BotRuntime {
   private config: BotRuntimeConfig;
@@ -130,6 +131,11 @@ export class BotRuntime {
         console.error(
           `[BotRuntime:${this.config.name}] Cycle error on ${activation.streamId}: ${error.message}`,
         );
+      },
+      drainAttachments: () => {
+        const atts = this.terminalVeilCtx.pendingAttachments || [];
+        this.terminalVeilCtx.pendingAttachments = [];
+        return atts;
       },
     });
 
@@ -273,6 +279,7 @@ export class BotRuntime {
 
     // Update shared tool contexts for this activation
     this.delegateActivationCtx.streamId = streamId;
+    this.terminalVeilCtx.pendingAttachments = [];
     this.terminalVeilCtx.streamId = streamId;
     this.terminalVeilCtx.grpcClient = this.grpcClient;
     this.terminalVeilCtx.agentId = this.agentId;
@@ -320,6 +327,10 @@ export class BotRuntime {
         console.log(`[BotRuntime:${this.config.name}] ${mcpTools.length} MCP tool(s) from [${this.config.mcp.join(', ')}]`);
       }
     }
+
+    // Always add attach_file tool (queues file attachments for speech delivery)
+    toolHandlers.push(createAttachTool(this.terminalVeilCtx));
+    console.log(`[BotRuntime:${this.config.name}] attach_file tool enabled`);
 
     return toolHandlers;
   }

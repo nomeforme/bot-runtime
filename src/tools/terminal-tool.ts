@@ -26,6 +26,13 @@ export interface TerminalVeilContext {
   grpcClient?: SpawnOptions['grpcClient'];
   agentId?: string;
   agentName?: string;
+  pendingAttachments?: Array<{
+    id: string;
+    contentType: string;
+    data: string;          // base64
+    filename: string;
+    sizeBytes: number;
+  }>;
 }
 
 export function createTerminalTool(
