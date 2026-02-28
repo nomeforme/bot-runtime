@@ -6,7 +6,7 @@
  */
 
 import type { ToolHandler } from '@connectome/agent-core';
-import type { ProcessRegistry } from '../process-registry.js';
+import type { ProcessRegistry, SpawnOptions } from '../process-registry.js';
 
 export interface TerminalToolConfig {
   type: 'terminal';
@@ -17,9 +17,21 @@ export interface TerminalToolConfig {
   max_output_chars?: number;
 }
 
+/**
+ * Mutable VEIL context — set by BotRuntime before each activation
+ * so background processes can emit speech facets on exit.
+ */
+export interface TerminalVeilContext {
+  streamId?: string;
+  grpcClient?: SpawnOptions['grpcClient'];
+  agentId?: string;
+  agentName?: string;
+}
+
 export function createTerminalTool(
   config: TerminalToolConfig,
   registry: ProcessRegistry,
+  veilCtx: TerminalVeilContext = {},
 ): ToolHandler {
   const defaultCwd = config.default_cwd || process.cwd();
   const timeoutMs = config.timeout_ms ?? 120_000;
@@ -61,7 +73,15 @@ export function createTerminalTool(
       const timeout = input.timeout ?? timeoutMs;
 
       try {
-        const session = registry.spawn(command, { cwd, pty: usePty });
+        // Pass VEIL context for background processes (emit speech on exit)
+        const spawnOpts: SpawnOptions = { cwd, pty: usePty };
+        if (background && veilCtx.streamId) {
+          spawnOpts.streamId = veilCtx.streamId;
+          spawnOpts.grpcClient = veilCtx.grpcClient;
+          spawnOpts.agentId = veilCtx.agentId;
+          spawnOpts.agentName = veilCtx.agentName;
+        }
+        const session = registry.spawn(command, spawnOpts);
 
         if (background) {
           return JSON.stringify({

@@ -11,11 +11,20 @@ import type { ConnectomeClient } from '@connectome/grpc-common';
 import type { ToolHandler } from '@connectome/agent-core';
 import type { DelegateToolConfig } from '../bot-config.js';
 
+/**
+ * Mutable activation context — set by BotRuntime before each activation
+ * so the delegate tool can link workspace streams to the triggering stream.
+ */
+export interface DelegateActivationContext {
+  streamId?: string;
+}
+
 export function createDelegateTool(
   config: DelegateToolConfig,
   grpcClient: ConnectomeClient,
   agentName: string,
   agentId: string,
+  activationCtx: DelegateActivationContext = {},
 ): ToolHandler {
   return {
     name: config.name,
@@ -56,12 +65,15 @@ export function createDelegateTool(
         ? `/workspace/shared/${input.workdir}`
         : `/workspace/shared/${input.workspace || 'default'}`;
 
+      // Parent stream = the stream that triggered this activation
+      const parentStreamId = activationCtx.streamId;
+
       try {
-        // Create workspace stream if needed
+        // Create workspace stream with parent linkage (inherits context up to fork point)
         await grpcClient.createStream(streamId, 'workspace', {
           createdBy: agentName,
           purpose: task,
-        });
+        }, parentStreamId);
 
         // Emit agent-activation targeting the other bot
         await grpcClient.emitEvent('agent:activate', {

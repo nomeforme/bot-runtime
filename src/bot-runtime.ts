@@ -23,9 +23,9 @@ import type { BotRuntimeConfig, ToolConfig, CliToolConfig, HttpToolConfig, Termi
 import { ConnectomeBridge } from './connectome-bridge.js';
 import { NullPlatformAdapter } from './adapters/null-adapter.js';
 import { ProcessRegistry } from './process-registry.js';
-import { createTerminalTool } from './tools/terminal-tool.js';
+import { createTerminalTool, type TerminalVeilContext } from './tools/terminal-tool.js';
 import { createProcessTool } from './tools/process-tool.js';
-import { createDelegateTool } from './tools/delegate-tool.js';
+import { createDelegateTool, type DelegateActivationContext } from './tools/delegate-tool.js';
 
 export class BotRuntime {
   private config: BotRuntimeConfig;
@@ -37,6 +37,10 @@ export class BotRuntime {
   private processRegistry: ProcessRegistry;
   private agentId: string;
   private unsubscribeActivations?: () => void;
+  /** Mutable context shared with delegate tool — updated per activation */
+  private delegateActivationCtx: DelegateActivationContext = {};
+  /** Mutable context shared with terminal tool — updated per activation */
+  private terminalVeilCtx: TerminalVeilContext = {};
 
   constructor(config: BotRuntimeConfig) {
     this.config = config;
@@ -267,6 +271,13 @@ export class BotRuntime {
 
     console.log(`[BotRuntime:${this.config.name}] Activation on ${streamId} (reason: ${state.reason || 'unknown'})`);
 
+    // Update shared tool contexts for this activation
+    this.delegateActivationCtx.streamId = streamId;
+    this.terminalVeilCtx.streamId = streamId;
+    this.terminalVeilCtx.grpcClient = this.grpcClient;
+    this.terminalVeilCtx.agentId = this.agentId;
+    this.terminalVeilCtx.agentName = this.config.name;
+
     this.effector.handleActivation(activation).catch((err) => {
       console.error(`[BotRuntime:${this.config.name}] Activation error on ${streamId}: ${err.message}`);
     });
@@ -323,9 +334,9 @@ export class BotRuntime {
         if (config.name === 'process') {
           return createProcessTool(config, this.processRegistry);
         }
-        return createTerminalTool(config, this.processRegistry);
+        return createTerminalTool(config, this.processRegistry, this.terminalVeilCtx);
       case 'delegate':
-        return createDelegateTool(config, this.grpcClient, this.config.name, this.agentId);
+        return createDelegateTool(config, this.grpcClient, this.config.name, this.agentId, this.delegateActivationCtx);
       default:
         throw new Error(`Unknown tool type: ${(config as any).type}`);
     }

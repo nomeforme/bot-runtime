@@ -31,6 +31,11 @@ export interface SpawnOptions {
   cwd?: string;
   env?: Record<string, string>;
   pty?: boolean;
+  /** VEIL integration: emit speech facet on process exit */
+  streamId?: string;
+  grpcClient?: { emitEvent(topic: string, payload: any, options?: any): Promise<any> };
+  agentId?: string;
+  agentName?: string;
 }
 
 export class ProcessRegistry {
@@ -87,6 +92,7 @@ export class ProcessRegistry {
       ptyProc.onExit(({ exitCode }: { exitCode: number }) => {
         session.exited = true;
         session.exitCode = exitCode;
+        this.emitProcessExit(session, opts);
       });
     } else {
       // Plain child_process mode
@@ -110,6 +116,7 @@ export class ProcessRegistry {
       child.on('exit', (code) => {
         session.exited = true;
         session.exitCode = code ?? null;
+        this.emitProcessExit(session, opts);
       });
 
       child.on('error', (err) => {
@@ -188,6 +195,24 @@ export class ProcessRegistry {
   // ---------------------------------------------------------------------------
   // Private
   // ---------------------------------------------------------------------------
+
+  /** Emit a speech facet when a background process exits (if VEIL context was provided) */
+  private emitProcessExit(session: ProcessSession, opts: SpawnOptions): void {
+    if (!opts.streamId || !opts.grpcClient) return;
+
+    const summary = session.outputBuffer.slice(-2000); // last 2KB
+    const content = `Process \`${session.command}\` exited (code ${session.exitCode}):\n\`\`\`\n${summary}\n\`\`\``;
+
+    opts.grpcClient.emitEvent('agent:speech', {
+      content,
+      agentId: opts.agentId,
+      agentName: opts.agentName,
+      streamId: opts.streamId,
+      timestamp: Date.now(),
+    }).catch((err: any) => {
+      console.error(`[ProcessRegistry] Failed to emit process exit speech: ${err.message}`);
+    });
+  }
 
   private getSession(id: string): ProcessSession {
     const session = this.sessions.get(id);
