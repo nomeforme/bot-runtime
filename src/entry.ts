@@ -15,6 +15,9 @@
  *   AWS_REGION           — AWS region (default: us-east-1)
  */
 
+import { initErrorTracking, Sentry } from '@connectome/grpc-common';
+initErrorTracking({ serviceName: `bot-${process.env.BOT_NAME || 'unknown'}` });
+
 import { parseCliArgs, loadBotConfig } from './bot-config.js';
 import { BotRuntime } from './bot-runtime.js';
 
@@ -33,6 +36,7 @@ async function main(): Promise<void> {
     const shutdown = async () => {
       console.log('\nShutting down...');
       await runtime.stop();
+      await Sentry.flush(2000);
       process.exit(0);
     };
     process.on('SIGINT', shutdown);

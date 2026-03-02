@@ -13,6 +13,17 @@
       "headers": {
         "Authorization": "Bearer ${WOLFRAM_API_KEY}"
       }
+    },
+    {
+      "name": "glitchtip",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "mcp-glitchtip"],
+      "env": {
+        "GLITCHTIP_BASE_URL": "http://glitchtip:8080",
+        "GLITCHTIP_TOKEN": "${GLITCHTIP_API_TOKEN}",
+        "GLITCHTIP_ORGANIZATION": "connectome"
+      }
     }
   ],
   "tool_configs": [
@@ -54,7 +65,7 @@
       "name": "claude-opus-4-6",
       "model": "claude-opus-4-6",
       "prompt": "Standard",
-      "max_tokens": 1024,
+      "max_tokens": 16384,
       "tools": ["fetch", "polymarket", "terminal", "process", "delegate"],
       "skill_paths": [
         "/workspace/skills/connectome-ontology",
@@ -73,12 +84,13 @@
       "name": "claude-sonnet-4-6",
       "model": "claude-sonnet-4-6",
       "prompt": "Standard",
-      "max_tokens": 1024,
-      "tools": ["fetch", "delegate"],
+      "max_tokens": 16384,
+      "tools": ["fetch", "terminal", "process", "delegate"],
       "skill_paths": [
         "/workspace/skills/connectome-ontology",
         "/workspace/pi-skills/brave-search",
         "/workspace/skills/agent-spawning/claude-code",
+        "/workspace/skills/agent-spawning/collaboration",
         "/workspace/skills/agent-spawning/coordination"
       ]
     },
@@ -102,12 +114,13 @@
       "name": "claude-sonnet-4-5",
       "model": "claude-sonnet-4-5-20250929",
       "prompt": "Standard",
-      "max_tokens": 1024,
-      "tools": ["fetch", "delegate"],
+      "max_tokens": 16384,
+      "tools": ["fetch", "terminal", "process", "delegate"],
       "skill_paths": [
         "/workspace/skills/connectome-ontology",
         "/workspace/pi-skills/brave-search",
         "/workspace/skills/agent-spawning/claude-code",
+        "/workspace/skills/agent-spawning/collaboration",
         "/workspace/skills/agent-spawning/coordination"
       ]
     },
@@ -115,9 +128,15 @@
       "name": "claude-opus-4-5",
       "model": "claude-opus-4-5-20251101",
       "prompt": "Standard",
-      "max_tokens": 1024,
-      "tools": ["fetch"],
-      "mcp": ["everything"]
+      "max_tokens": 16384,
+      "tools": ["fetch", "terminal", "process", "delegate"],
+      "skill_paths": [
+        "/workspace/skills/connectome-ontology",
+        "/workspace/pi-skills/brave-search",
+        "/workspace/skills/agent-spawning/claude-code",
+        "/workspace/skills/agent-spawning/collaboration",
+        "/workspace/skills/agent-spawning/coordination"
+      ]
     },
     {
       "name": "claude-opus-4",
