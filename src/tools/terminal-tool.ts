@@ -7,6 +7,7 @@
 
 import type { ToolHandler } from '@connectome/agent-core';
 import type { ProcessRegistry, SpawnOptions } from '../process-registry.js';
+import type { ComputeHost } from '../bot-config.js';
 
 export interface TerminalToolConfig {
   type: 'terminal';
@@ -39,6 +40,7 @@ export function createTerminalTool(
   config: TerminalToolConfig,
   registry: ProcessRegistry,
   veilCtx: TerminalVeilContext = {},
+  computeHosts: ComputeHost[] = [],
 ): ToolHandler {
   const defaultCwd = config.default_cwd || process.cwd();
   const timeoutMs = config.timeout_ms ?? 120_000;
@@ -60,6 +62,20 @@ export function createTerminalTool(
         type: 'boolean',
         description: 'Use pseudo-terminal for interactive CLIs (default: true)',
       },
+      host: {
+        type: 'string',
+        description: computeHosts.length > 0
+          ? `Remote machine to execute on via SSH. Available: ${computeHosts.map((h) => `${h.name} [${h.capabilities?.join(', ') || 'general'}] (workspace: ${h.workspaceDir || `/home/${h.user}/workspace`})`).join('; ')}. Local workspace is /workspace/shared/. Omit for local execution.`
+          : 'Remote machine name to execute on via SSH (if configured). Omit for local execution.',
+      },
+      push: {
+        type: 'string',
+        description: 'Rsync local path to remote workspace BEFORE execution (e.g. "myproject/" syncs /workspace/shared/myproject/ to remote workspace). Only works with host.',
+      },
+      pull: {
+        type: 'string',
+        description: 'Rsync remote path to local workspace AFTER execution (e.g. "output/" syncs remote workspace/output/ to /workspace/shared/output/). Only works with host.',
+      },
       workdir: {
         type: 'string',
         description: 'Working directory (default: /workspace/shared)',
@@ -79,6 +95,42 @@ export function createTerminalTool(
       const background = input.background === true;
       const timeout = input.timeout ?? timeoutMs;
 
+      // Resolve remote host if specified
+      let actualCommand = command;
+      if (input.host) {
+        const host = computeHosts.find((h) => h.name === input.host);
+        if (!host) {
+          const available = computeHosts.map((h) => h.name).join(', ') || '(none configured)';
+          return `Error: Unknown compute host "${input.host}". Available: ${available}`;
+        }
+        const remoteCwd = input.workdir || host.workspaceDir || `/home/${host.user}/workspace`;
+        const sshTarget = `${host.user}@${host.host}`;
+        const sshBase = `ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10`;
+
+        // Build compound command: push → execute → pull
+        const parts: string[] = [];
+
+        if (input.push) {
+          const localPath = `${defaultCwd}/${input.push}`.replace(/\/+$/, '') + '/';
+          const remotePath = `${remoteCwd}/${input.push}`.replace(/\/+$/, '') + '/';
+          // Ensure remote dir exists, then rsync
+          parts.push(`${sshBase} ${sshTarget} ${shellEscape(`mkdir -p ${remotePath}`)}`);
+          parts.push(`rsync -az -e ${shellEscape(sshBase)} ${shellEscape(localPath)} ${sshTarget}:${shellEscape(remotePath)}`);
+        }
+
+        const remoteCmd = `cd ${shellEscape(remoteCwd)} && ${command}`;
+        parts.push(`${sshBase} ${sshTarget} ${shellEscape(remoteCmd)}`);
+
+        if (input.pull) {
+          const remotePath = `${remoteCwd}/${input.pull}`.replace(/\/+$/, '') + '/';
+          const localPath = `${defaultCwd}/${input.pull}`.replace(/\/+$/, '') + '/';
+          parts.push(`mkdir -p ${shellEscape(localPath)}`);
+          parts.push(`rsync -az -e ${shellEscape(sshBase)} ${sshTarget}:${shellEscape(remotePath)} ${shellEscape(localPath)}`);
+        }
+
+        actualCommand = parts.join(' && ');
+      }
+
       try {
         // Pass VEIL context for background processes (emit speech on exit)
         const spawnOpts: SpawnOptions = { cwd, pty: usePty };
@@ -88,7 +140,7 @@ export function createTerminalTool(
           spawnOpts.agentId = veilCtx.agentId;
           spawnOpts.agentName = veilCtx.agentName;
         }
-        const session = registry.spawn(command, spawnOpts);
+        const session = registry.spawn(actualCommand, spawnOpts);
 
         if (background) {
           return JSON.stringify({
@@ -115,6 +167,11 @@ export function createTerminalTool(
       }
     },
   };
+}
+
+/** Escape a string for safe use as a single shell argument. */
+function shellEscape(s: string): string {
+  return "'" + s.replace(/'/g, "'\\''") + "'";
 }
 
 /** Wait for a process to exit, with timeout. */

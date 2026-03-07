@@ -403,7 +403,7 @@ export class BotRuntime {
         if (config.name === 'process') {
           return createProcessTool(config, this.processRegistry);
         }
-        return createTerminalTool(config, this.processRegistry, this.terminalVeilCtx);
+        return createTerminalTool(config, this.processRegistry, this.terminalVeilCtx, this.config.compute_hosts || []);
       case 'delegate':
         return createDelegateTool(config, this.grpcClient, this.config.name, this.agentId, this.delegateActivationCtx);
       default:

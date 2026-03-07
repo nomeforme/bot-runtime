@@ -74,6 +74,17 @@ export interface DelegateToolConfig {
 /** Union of all tool config types */
 export type ToolConfig = CliToolConfig | HttpToolConfig | TerminalToolConfig | DelegateToolConfig;
 
+/** Remote compute host reachable via SSH over Tailscale */
+export interface ComputeHost {
+  name: string;
+  /** Tailscale hostname or IP */
+  host: string;
+  user: string;
+  capabilities?: string[];
+  /** Remote workspace root (default: ~/workspace) */
+  workspaceDir?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Config types
 // ---------------------------------------------------------------------------
@@ -122,6 +133,9 @@ export interface BotRuntimeConfig {
 
   // Axon bindings — advertise credentials to axons
   axon_bindings?: AxonBindingConfig[];
+
+  // Compute hosts — remote machines reachable via SSH (from COMPUTE_HOSTS env)
+  compute_hosts?: ComputeHost[];
 
   // Runtime settings
   max_conversation_frames?: number;
@@ -219,6 +233,7 @@ export function loadBotConfig(
     random_reply_chance: registry.random_reply_chance,
     max_bot_mentions_per_conversation: registry.max_bot_mentions_per_conversation,
     axon_bindings: buildAxonBindings(env),
+    compute_hosts: buildComputeHosts(env),
   };
 }
 
@@ -251,6 +266,27 @@ function buildAxonBindings(env: NodeJS.ProcessEnv): AxonBindingConfig[] {
   }
 
   return bindings;
+}
+
+/**
+ * Build compute hosts from COMPUTE_HOSTS env var.
+ * Format: name:host:user:cap1+cap2+cap3,...
+ * Example: COMPUTE_HOSTS=dream:REDACTED_IP:root:gpu+cuda+python3,other:10.0.0.5:coder:cpu
+ * User defaults to "root", capabilities are optional.
+ */
+function buildComputeHosts(env: NodeJS.ProcessEnv): ComputeHost[] {
+  const hostsStr = env.COMPUTE_HOSTS;
+  if (!hostsStr) return [];
+
+  return hostsStr.split(',').map((entry) => {
+    const parts = entry.trim().split(':');
+    const [name, host, user, caps] = parts;
+    if (!name || !host) return null;
+
+    const capabilities = caps ? caps.split('+').map((c) => c.trim()) : undefined;
+
+    return { name, host, user: user || 'root', capabilities };
+  }).filter(Boolean) as ComputeHost[];
 }
 
 /**

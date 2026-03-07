@@ -44,7 +44,7 @@
     {
       "type": "terminal",
       "name": "terminal",
-      "description": "Execute shell commands. Use background=true and pty=true for interactive CLI agents (Claude Code, Codex). Use the process tool to monitor background processes.",
+      "description": "Execute shell commands locally or on remote compute hosts. Use host parameter to run on a remote machine via SSH. Use background=true and pty=true for interactive CLI agents (Claude Code, Codex). Use the process tool to monitor background processes.",
       "default_cwd": "/workspace/shared",
       "timeout_ms": 120000,
       "max_output_chars": 50000
