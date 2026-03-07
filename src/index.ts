@@ -10,7 +10,7 @@ export { BotRuntime } from './bot-runtime.js';
 
 // Config
 export { loadBotConfig, parseCliArgs } from './bot-config.js';
-export type { BotRuntimeConfig, RlmConfig } from './bot-config.js';
+export type { BotRuntimeConfig, RlmConfig, AxonBindingConfig } from './bot-config.js';
 
 // Bridge
 export { ConnectomeBridge } from './connectome-bridge.js';

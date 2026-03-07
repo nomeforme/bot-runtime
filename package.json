@@ -20,6 +20,7 @@
   "dependencies": {
     "@connectome/agent-core": "workspace:*",
     "@connectome/grpc-common": "workspace:*",
+    "@connectome/axon-binding": "workspace:*",
     "node-pty": "^1.0.0"
   },
   "devDependencies": {

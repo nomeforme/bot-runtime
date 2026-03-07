@@ -120,11 +120,24 @@ export interface BotRuntimeConfig {
   connectome_host: string;
   connectome_port: number;
 
+  // Axon bindings — advertise credentials to axons
+  axon_bindings?: AxonBindingConfig[];
+
   // Runtime settings
   max_conversation_frames?: number;
   max_message_length?: number;
   random_reply_chance?: number;
   max_bot_mentions_per_conversation?: number;
+}
+
+/** Axon binding config: which axon to advertise credentials to */
+export interface AxonBindingConfig {
+  /** Platform identifier: "discord" | "signal" */
+  platform: string;
+  /** Axon binding server host:port (e.g. "discord-axon:50052") */
+  axon_host: string;
+  /** Platform-specific credentials (token, phone, uuid, etc.) */
+  credentials: Record<string, string>;
 }
 
 /** V1 config.json format (shared with discord-axon and signal-axon) */
@@ -205,7 +218,39 @@ export function loadBotConfig(
     max_message_length: registry.max_message_length,
     random_reply_chance: registry.random_reply_chance,
     max_bot_mentions_per_conversation: registry.max_bot_mentions_per_conversation,
+    axon_bindings: buildAxonBindings(env),
   };
+}
+
+/**
+ * Build axon bindings from env vars.
+ * DISCORD_TOKEN + DISCORD_AXON_HOST → discord binding
+ * SIGNAL_PHONE + SIGNAL_AXON_HOST → signal binding
+ */
+function buildAxonBindings(env: NodeJS.ProcessEnv): AxonBindingConfig[] {
+  const bindings: AxonBindingConfig[] = [];
+
+  if (env.DISCORD_TOKEN && env.DISCORD_AXON_HOST) {
+    bindings.push({
+      platform: 'discord',
+      axon_host: env.DISCORD_AXON_HOST,
+      credentials: { token: env.DISCORD_TOKEN },
+    });
+  }
+
+  if (env.SIGNAL_PHONE && env.SIGNAL_AXON_HOST) {
+    const creds: Record<string, string> = { phone: env.SIGNAL_PHONE };
+    if (env.SIGNAL_UUID) {
+      creds.uuid = env.SIGNAL_UUID;
+    }
+    bindings.push({
+      platform: 'signal',
+      axon_host: env.SIGNAL_AXON_HOST,
+      credentials: creds,
+    });
+  }
+
+  return bindings;
 }
 
 /**

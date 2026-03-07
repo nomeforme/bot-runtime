@@ -13,6 +13,7 @@
 import { execFile } from 'child_process';
 import { ConnectomeClient, MCPManager } from '@connectome/grpc-common';
 import type { MCPServerConfig, FacetDelta } from '@connectome/grpc-common';
+import { AxonBindingClient } from '@connectome/axon-binding';
 import {
   ConnectomeAgent,
   ConnectomeEffector,
@@ -38,6 +39,7 @@ export class BotRuntime {
   private processRegistry: ProcessRegistry;
   private agentId: string;
   private unsubscribeActivations?: () => void;
+  private bindingClients: AxonBindingClient[] = [];
   /** Mutable context shared with delegate tool — updated per activation */
   private delegateActivationCtx: DelegateActivationContext = {};
   /** Mutable context shared with terminal tool — updated per activation */
@@ -142,6 +144,9 @@ export class BotRuntime {
     // 7. Subscribe to activation events via gRPC
     this.subscribeToActivations();
 
+    // 8. Advertise axon bindings to axons (non-blocking)
+    this.advertiseAxonBindings();
+
     console.log(`\n[BotRuntime:${this.config.name}] Started successfully\n`);
   }
 
@@ -156,6 +161,12 @@ export class BotRuntime {
 
     // Kill all managed processes
     this.processRegistry.destroy();
+
+    // Withdraw axon bindings and disconnect binding clients
+    for (const client of this.bindingClients) {
+      client.disconnect();
+    }
+    this.bindingClients = [];
 
     // Disconnect MCP servers
     if (this.mcpManager) {
@@ -293,6 +304,53 @@ export class BotRuntime {
   // ---------------------------------------------------------------------------
   // Private
   // ---------------------------------------------------------------------------
+
+  /** Advertise axon bindings to axons with retry */
+  private advertiseAxonBindings(): void {
+    const bindings = this.config.axon_bindings;
+    if (!bindings || bindings.length === 0) return;
+
+    for (const binding of bindings) {
+      const [bHost, bPortStr] = binding.axon_host.split(':');
+      const bPort = parseInt(bPortStr) || 50052;
+
+      // Async — don't block startup, retry on failure
+      this.advertiseWithRetry(binding.platform, binding.axon_host, bHost, bPort, binding.credentials);
+    }
+  }
+
+  private async advertiseWithRetry(
+    platform: string, axonHost: string, host: string, port: number,
+    credentials: Record<string, string>, maxAttempts = 10
+  ): Promise<void> {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const client = new AxonBindingClient({ host, port });
+      try {
+        await client.connect();
+        const result = await client.advertise({
+          agentName: this.config.name,
+          platform,
+          credentials,
+        });
+        this.bindingClients.push(client);
+        if (result.success) {
+          console.log(`[BotRuntime:${this.config.name}] Advertised ${platform} binding to ${axonHost}`);
+        } else {
+          console.error(`[BotRuntime:${this.config.name}] Binding rejected by ${axonHost}: ${result.error}`);
+        }
+        return;
+      } catch (error: any) {
+        client.disconnect();
+        if (attempt < maxAttempts) {
+          const delay = Math.min(2000 * attempt, 15000);
+          console.warn(`[BotRuntime:${this.config.name}] ${platform} binding to ${axonHost} failed (attempt ${attempt}/${maxAttempts}), retrying in ${delay}ms`);
+          await new Promise(r => setTimeout(r, delay));
+        } else {
+          console.error(`[BotRuntime:${this.config.name}] ${platform} binding to ${axonHost} failed after ${maxAttempts} attempts: ${error.message}`);
+        }
+      }
+    }
+  }
 
   /** Initialize tools from config: tool_configs (cli/http) + MCP servers */
   private async initTools(): Promise<ToolHandler[]> {

@@ -9,6 +9,7 @@
   "exclude": ["node_modules", "dist"],
   "references": [
     { "path": "../connectome-agent-core" },
-    { "path": "../connectome-grpc-common" }
+    { "path": "../connectome-grpc-common" },
+    { "path": "../connectome-axon-binding" }
   ]
 }
