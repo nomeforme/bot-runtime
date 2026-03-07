@@ -128,7 +128,7 @@ export class BotRuntime {
       adapter: new NullPlatformAdapter(),
       contextProvider: this.bridge,
       speechRecorder: this.bridge,
-      maxFrames: this.config.max_conversation_frames ?? 100,
+      maxFrames: this.config.max_conversation_frames ?? 500,
       onError: (error, activation) => {
         console.error(
           `[BotRuntime:${this.config.name}] Cycle error on ${activation.streamId}: ${error.message}`,

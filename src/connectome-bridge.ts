@@ -49,13 +49,13 @@ export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
     streamId: string,
     options?: { maxFrames?: number },
   ): Promise<AgentContext> {
-    console.log(`[ConnectomeBridge:${this.agentName}] Fetching context for stream ${streamId} (maxFrames=${options?.maxFrames ?? 100})`);
+    console.log(`[ConnectomeBridge:${this.agentName}] Fetching context for stream ${streamId} (maxFrames=${options?.maxFrames ?? 500})`);
 
     try {
       const result = await this.client.getContext(
         this.agentId,
         streamId,
-        { maxFrames: options?.maxFrames ?? 100 },
+        { maxFrames: options?.maxFrames ?? 500 },
       );
 
       const serverContext = result.context as any;

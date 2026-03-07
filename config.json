@@ -95,10 +95,9 @@
     {
       "name": "claude-3-opus",
       "model": "claude-3-opus-20240229",
-      "prompt": "Standard",
       "max_tokens": 1024,
       "tools": [],
-      "skip_identity_prompt": false
+      "skip_identity_prompt": true
     },
     {
       "name": "claude-3-sonnet",
@@ -202,7 +201,7 @@
       "tools": ["fetch"]
     }
   ],
-  "max_conversation_frames": 100,
+  "max_conversation_frames": 500,
   "max_bot_mentions_per_conversation": 1,
   "random_reply_chance": 200,
   "max_message_length": 2000
