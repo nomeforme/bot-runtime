@@ -28,6 +28,7 @@ import { createTerminalTool, type TerminalVeilContext } from './tools/terminal-t
 import { createProcessTool } from './tools/process-tool.js';
 import { createDelegateTool, type DelegateActivationContext } from './tools/delegate-tool.js';
 import { createAttachTool } from './tools/attach-tool.js';
+import { createListStreamsTool, createGetStreamContextTool, type StreamToolContext } from './tools/streams-tool.js';
 
 export class BotRuntime {
   private config: BotRuntimeConfig;
@@ -44,6 +45,8 @@ export class BotRuntime {
   private delegateActivationCtx: DelegateActivationContext = {};
   /** Mutable context shared with terminal tool — updated per activation */
   private terminalVeilCtx: TerminalVeilContext = {};
+  /** Mutable context shared with stream tools — updated per activation */
+  private streamToolCtx: StreamToolContext = {};
 
   constructor(config: BotRuntimeConfig) {
     this.config = config;
@@ -295,6 +298,9 @@ export class BotRuntime {
     this.terminalVeilCtx.grpcClient = this.grpcClient;
     this.terminalVeilCtx.agentId = this.agentId;
     this.terminalVeilCtx.agentName = this.config.name;
+    this.streamToolCtx.agentId = this.agentId;
+    this.streamToolCtx.currentStreamId = streamId;
+    this.streamToolCtx.grpcClient = this.grpcClient;
 
     this.effector.handleActivation(activation).catch((err) => {
       console.error(`[BotRuntime:${this.config.name}] Activation error on ${streamId}: ${err.message}`);
@@ -389,6 +395,11 @@ export class BotRuntime {
     // Always add attach_file tool (queues file attachments for speech delivery)
     toolHandlers.push(createAttachTool(this.terminalVeilCtx));
     console.log(`[BotRuntime:${this.config.name}] attach_file tool enabled`);
+
+    // Always add stream awareness tools (cross-stream context)
+    toolHandlers.push(createListStreamsTool(this.streamToolCtx));
+    toolHandlers.push(createGetStreamContextTool(this.streamToolCtx));
+    console.log(`[BotRuntime:${this.config.name}] stream awareness tools enabled`);
 
     return toolHandlers;
   }
