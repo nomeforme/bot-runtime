@@ -269,13 +269,21 @@ function buildAxonBindings(env: NodeJS.ProcessEnv): AxonBindingConfig[] {
     });
   }
 
+  if (env.WHATSAPP_PHONE && env.WHATSAPP_AXON_HOST) {
+    bindings.push({
+      platform: 'whatsapp',
+      axon_host: env.WHATSAPP_AXON_HOST,
+      credentials: { phone: env.WHATSAPP_PHONE },
+    });
+  }
+
   return bindings;
 }
 
 /**
  * Build compute hosts from COMPUTE_HOSTS env var.
  * Format: name:host:user:cap1+cap2+cap3,...
- * Example: COMPUTE_HOSTS=dream:REDACTED_IP:root:gpu+cuda+python3,other:10.0.0.5:coder:cpu
+ * Example: COMPUTE_HOSTS=dream:HOST:root:gpu+cuda+python3,other:HOST:coder:cpu
  * User defaults to "root", capabilities are optional.
  */
 function buildComputeHosts(env: NodeJS.ProcessEnv): ComputeHost[] {
