@@ -220,6 +220,7 @@ export class BotRuntime {
         filters: [
           { types: ['agent-activation'] },
           { types: ['rendered-context'] },
+          { types: ['bot-config'] },
         ],
         includeExisting: false,
         streamIds: [],
@@ -228,6 +229,12 @@ export class BotRuntime {
         if (delta.type !== 'added' || !delta.facet) return;
 
         const facet = delta.facet;
+
+        // Handle bot-config events (e.g. !mt command)
+        if (facet.type === 'bot-config') {
+          this.handleConfigUpdate(facet);
+          return;
+        }
 
         if (facet.type === 'agent-activation') {
           const activationId = facet.id;
@@ -264,6 +271,24 @@ export class BotRuntime {
   }
 
   /**
+   * Handle a bot-config facet (e.g. from !mt command).
+   */
+  private handleConfigUpdate(facet: any): void {
+    const state = facet.state || {};
+    const targetAgent = state.targetAgent;
+
+    // Only handle config for this bot
+    if (targetAgent && targetAgent !== this.config.name) return;
+
+    if ('maxOutputTokens' in state) {
+      const value = state.maxOutputTokens === null ? undefined : state.maxOutputTokens;
+      if (this.agent) {
+        this.agent.setMaxOutputTokens(value);
+      }
+    }
+  }
+
+  /**
    * Build UnifiedActivation from paired facets and dispatch to the effector.
    */
   private fireActivation(activationFacet: any, _contextFacet: any): void {
@@ -287,6 +312,7 @@ export class BotRuntime {
       },
       messageContent: state.metadata?.messageContent || '',
       authorName: state.metadata?.authorName || 'system',
+      continuation: state.metadata?.continuation === 'true',
     };
 
     console.log(`[BotRuntime:${this.config.name}] Activation on ${streamId} (reason: ${state.reason || 'unknown'})`);
