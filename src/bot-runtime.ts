@@ -225,6 +225,7 @@ export class BotRuntime {
           { types: ['agent-activation'] },
           { types: ['rendered-context'] },
           { types: ['bot-config'] },
+          { types: ['agent-command'] },
         ],
         includeExisting: false,
         streamIds: [],
@@ -237,6 +238,12 @@ export class BotRuntime {
         // Handle bot-config events (e.g. !mt command)
         if (facet.type === 'bot-config') {
           this.handleConfigUpdate(facet);
+          return;
+        }
+
+        // Handle agent-command events (e.g. !stop, !steer)
+        if (facet.type === 'agent-command') {
+          this.handleAgentCommand(facet);
           return;
         }
 
@@ -293,6 +300,45 @@ export class BotRuntime {
   }
 
   /**
+   * Handle an agent-command facet (e.g. !stop, !steer from chat).
+   */
+  private handleAgentCommand(facet: any): void {
+    const state = facet.state || {};
+    const targetAgent = state.targetAgent;
+
+    // Only handle commands for this bot
+    if (targetAgent && targetAgent !== this.config.name) return;
+
+    const prefix = `[BotRuntime:${this.config.name}]`;
+
+    switch (state.type) {
+      case 'stop': {
+        if (this.effector && this.effector.abort()) {
+          console.log(`${prefix} !stop: cycle aborted`);
+        } else {
+          console.log(`${prefix} !stop: no active cycle to abort`);
+        }
+        break;
+      }
+      case 'steer': {
+        const message = state.message;
+        if (!message) {
+          console.warn(`${prefix} !steer: no message provided`);
+          break;
+        }
+        if (this.effector && this.effector.steer(message)) {
+          console.log(`${prefix} !steer: injected "${message.substring(0, 80)}"`);
+        } else {
+          console.log(`${prefix} !steer: no active cycle to steer`);
+        }
+        break;
+      }
+      default:
+        console.warn(`${prefix} Unknown agent-command type: ${state.type}`);
+    }
+  }
+
+  /**
    * Build UnifiedActivation from paired facets and dispatch to the effector.
    */
   private fireActivation(activationFacet: any, _contextFacet: any): void {
@@ -332,8 +378,18 @@ export class BotRuntime {
     this.streamToolCtx.currentStreamId = streamId;
     this.streamToolCtx.grpcClient = this.grpcClient;
 
-    this.effector.handleActivation(activation).catch((err) => {
+    this.effector.handleActivation(activation).then(() => {
+      // Signal cycle completion so axon can clear typing indicator
+      this.grpcClient.emitEvent('agent:typing-stop', {
+        targetAgent: this.config.name,
+        streamId,
+      }).catch(() => {});
+    }).catch((err) => {
       console.error(`[BotRuntime:${this.config.name}] Activation error on ${streamId}: ${err.message}`);
+      this.grpcClient.emitEvent('agent:typing-stop', {
+        targetAgent: this.config.name,
+        streamId,
+      }).catch(() => {});
     });
   }
 

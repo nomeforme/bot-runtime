@@ -91,7 +91,7 @@ export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
 
   async recordSpeech(
     content: string,
-    metadata: { agentId: string; agentName: string; streamId: string; attachments?: Array<{ id: string; contentType: string; data: string; filename?: string; sizeBytes?: number }> },
+    metadata: { agentId: string; agentName: string; streamId: string; attachments?: Array<{ id: string; contentType: string; data: string; filename?: string; sizeBytes?: number }>; cyclePending?: boolean },
   ): Promise<void> {
     try {
       const payload: Record<string, any> = {
@@ -103,6 +103,9 @@ export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
       };
       if (metadata.attachments?.length) {
         payload.attachments = metadata.attachments;
+      }
+      if (metadata.cyclePending) {
+        payload.cyclePending = true;
       }
       await this.client.emitEvent(
         'agent:speech',
