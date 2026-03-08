@@ -12,6 +12,7 @@
 import { ConnectomeClient } from '@connectome/grpc-common';
 import { renderedContextToAgentContext } from '@connectome/agent-core';
 import type { ContextProvider, SpeechRecorder, AgentContext } from '@connectome/agent-core';
+import type { TerminalVeilContext } from './tools/terminal-tool.js';
 
 export interface ConnectomeBridgeConfig {
   /** gRPC client instance */
@@ -24,6 +25,8 @@ export interface ConnectomeBridgeConfig {
   systemPrompt: string;
   /** Skip identity text in system prompt */
   skipIdentityPrompt?: boolean;
+  /** Shared VEIL context — incoming attachments populated here during getContext */
+  veilCtx?: TerminalVeilContext;
 }
 
 export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
@@ -32,6 +35,7 @@ export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
   private agentId: string;
   private systemPrompt: string;
   private skipIdentityPrompt: boolean;
+  private veilCtx?: TerminalVeilContext;
 
   constructor(config: ConnectomeBridgeConfig) {
     this.client = config.client;
@@ -39,6 +43,7 @@ export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
     this.agentId = config.agentId;
     this.systemPrompt = config.systemPrompt;
     this.skipIdentityPrompt = config.skipIdentityPrompt ?? false;
+    this.veilCtx = config.veilCtx;
   }
 
   // ---------------------------------------------------------------------------
@@ -62,6 +67,11 @@ export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
 
       // Transform server conversation to RenderedContextLike format
       const messages = this.transformToMessages(serverContext);
+
+      // Extract incoming file attachments for save_attachment tool
+      if (this.veilCtx) {
+        this.veilCtx.incomingAttachments = this.extractIncomingAttachments(messages);
+      }
 
       // Log conversation history (last 10 messages)
       this.logConversationData(messages, streamId);
@@ -201,6 +211,32 @@ To mention users or other bots, use @username syntax (e.g. @claude-opus-4-5). Th
       console.log(`${prefix} ║ [${i + 1}] ${roleLabel}: ${displayContent}`);
     }
     console.log(`${prefix} ╚══════════════════════════════════════`);
+  }
+
+  /** Extract non-image attachments with data from context messages for save_attachment tool */
+  private extractIncomingAttachments(messages: Array<{
+    role: string; content: string; metadata?: { attachments?: any[] };
+  }>): TerminalVeilContext['incomingAttachments'] {
+    const attachments: NonNullable<TerminalVeilContext['incomingAttachments']> = [];
+    for (const msg of messages) {
+      if (!msg.metadata?.attachments) continue;
+      for (const att of msg.metadata.attachments) {
+        // Only collect non-image attachments that have base64 data
+        if (att.data && !att.contentType?.startsWith('image/')) {
+          attachments.push({
+            id: att.id || att.name || `att-${attachments.length}`,
+            contentType: att.contentType || 'application/octet-stream',
+            data: att.data,
+            filename: att.name || att.filename || `attachment-${attachments.length}`,
+            sizeBytes: att.size || 0,
+          });
+        }
+      }
+    }
+    if (attachments.length > 0) {
+      console.log(`[ConnectomeBridge:${this.agentName}] Found ${attachments.length} incoming file attachment(s) for save_attachment`);
+    }
+    return attachments;
   }
 
   /** Build fallback context when server is unavailable */

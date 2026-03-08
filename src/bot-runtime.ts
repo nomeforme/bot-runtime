@@ -28,6 +28,7 @@ import { createTerminalTool, type TerminalVeilContext } from './tools/terminal-t
 import { createProcessTool } from './tools/process-tool.js';
 import { createDelegateTool, type DelegateActivationContext } from './tools/delegate-tool.js';
 import { createAttachTool } from './tools/attach-tool.js';
+import { createSaveAttachmentTool } from './tools/save-attachment-tool.js';
 import { createListStreamsTool, createGetStreamContextTool, type StreamToolContext } from './tools/streams-tool.js';
 
 export class BotRuntime {
@@ -125,6 +126,7 @@ export class BotRuntime {
       agentId: regResult.agentId,
       systemPrompt,
       skipIdentityPrompt: this.config.skip_identity_prompt || this.config.skip_system_prompt,
+      veilCtx: this.terminalVeilCtx,
     });
 
     // 6. Create effector with NullPlatformAdapter (no direct platform delivery)
@@ -423,7 +425,8 @@ export class BotRuntime {
     // Add default tools unless skip_system_prompt is set (bare mode — no tools, no prompt)
     if (!this.config.skip_system_prompt) {
       toolHandlers.push(createAttachTool(this.terminalVeilCtx));
-      console.log(`[BotRuntime:${this.config.name}] attach_file tool enabled`);
+      toolHandlers.push(createSaveAttachmentTool(this.terminalVeilCtx));
+      console.log(`[BotRuntime:${this.config.name}] attach_file + save_attachment tools enabled`);
 
       toolHandlers.push(createListStreamsTool(this.streamToolCtx));
       toolHandlers.push(createGetStreamContextTool(this.streamToolCtx));

@@ -34,6 +34,14 @@ export interface TerminalVeilContext {
     filename: string;
     sizeBytes: number;
   }>;
+  /** Incoming attachments from the current context (populated by ConnectomeBridge) */
+  incomingAttachments?: Array<{
+    id: string;
+    contentType: string;
+    data: string;          // base64
+    filename: string;
+    sizeBytes: number;
+  }>;
 }
 
 export function createTerminalTool(
