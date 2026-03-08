@@ -110,6 +110,8 @@ export interface BotRuntimeConfig {
   prompt?: string;
   /** Skip identity injection in system prompt */
   skip_identity_prompt?: boolean;
+  /** Skip system prompt entirely (send no system prompt to the model) */
+  skip_system_prompt?: boolean;
   /** Max output tokens per API call */
   max_tokens?: number;
   /** Tool names this bot should use (references global tool_configs) */
@@ -160,6 +162,7 @@ interface V1BotEntry {
   model?: string;
   prompt?: string;
   skip_identity_prompt?: boolean;
+  skip_system_prompt?: boolean;
   max_tokens?: number;
   tools?: string[];
   mcp?: string[];
@@ -218,6 +221,7 @@ export function loadBotConfig(
     model: botEntry.model || 'claude-sonnet-4-20250514',
     prompt: botEntry.prompt,
     skip_identity_prompt: botEntry.skip_identity_prompt,
+    skip_system_prompt: botEntry.skip_system_prompt,
     max_tokens: botEntry.max_tokens,
     tools: botEntry.tools,
     skill_paths: botEntry.skill_paths,

@@ -97,7 +97,7 @@
       "model": "claude-3-opus-20240229",
       "max_tokens": 1024,
       "tools": [],
-      "skip_identity_prompt": true
+      "skip_system_prompt": true
     },
     {
       "name": "claude-3-sonnet",

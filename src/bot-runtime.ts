@@ -104,15 +104,17 @@ export class BotRuntime {
       throw new Error(`Model not found: ${this.config.model}`);
     }
 
+    const systemPrompt = this.config.skip_system_prompt ? '' : (this.config.prompt || 'Standard');
+
     this.agent = new ConnectomeAgent({
       name: this.config.name,
-      systemPrompt: this.config.prompt || 'Standard',
+      systemPrompt,
       model,
       toolHandlers,
       promptCaching: this.config.prompt_caching,
       maxOutputTokens: this.config.max_tokens,
-      skillPaths: this.config.skill_paths,
-      rlm: this.config.rlm,
+      skillPaths: this.config.skip_system_prompt ? undefined : this.config.skill_paths,
+      rlm: this.config.skip_system_prompt ? undefined : this.config.rlm,
     });
     console.log(`[BotRuntime:${this.config.name}] ConnectomeAgent created (${this.config.model})`);
 
@@ -121,8 +123,8 @@ export class BotRuntime {
       client: this.grpcClient,
       agentName: this.config.name,
       agentId: regResult.agentId,
-      systemPrompt: this.config.prompt || 'Standard',
-      skipIdentityPrompt: this.config.skip_identity_prompt,
+      systemPrompt,
+      skipIdentityPrompt: this.config.skip_identity_prompt || this.config.skip_system_prompt,
     });
 
     // 6. Create effector with NullPlatformAdapter (no direct platform delivery)
@@ -418,14 +420,15 @@ export class BotRuntime {
       }
     }
 
-    // Always add attach_file tool (queues file attachments for speech delivery)
-    toolHandlers.push(createAttachTool(this.terminalVeilCtx));
-    console.log(`[BotRuntime:${this.config.name}] attach_file tool enabled`);
+    // Add default tools unless skip_system_prompt is set (bare mode — no tools, no prompt)
+    if (!this.config.skip_system_prompt) {
+      toolHandlers.push(createAttachTool(this.terminalVeilCtx));
+      console.log(`[BotRuntime:${this.config.name}] attach_file tool enabled`);
 
-    // Always add stream awareness tools (cross-stream context)
-    toolHandlers.push(createListStreamsTool(this.streamToolCtx));
-    toolHandlers.push(createGetStreamContextTool(this.streamToolCtx));
-    console.log(`[BotRuntime:${this.config.name}] stream awareness tools enabled`);
+      toolHandlers.push(createListStreamsTool(this.streamToolCtx));
+      toolHandlers.push(createGetStreamContextTool(this.streamToolCtx));
+      console.log(`[BotRuntime:${this.config.name}] stream awareness tools enabled`);
+    }
 
     return toolHandlers;
   }
