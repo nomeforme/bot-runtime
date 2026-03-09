@@ -122,6 +122,8 @@ export interface BotRuntimeConfig {
   rlm?: RlmConfig;
   /** Enable prompt caching (default true) */
   prompt_caching?: boolean;
+  /** Force API key auth instead of OAuth (for models not on Claude subscription) */
+  use_api_key?: boolean;
   /** MCP server names this bot should use */
   mcp?: string[];
   /** Global MCP server configurations */
@@ -167,6 +169,7 @@ interface V1BotEntry {
   tools?: string[];
   mcp?: string[];
   prompt_caching?: boolean;
+  use_api_key?: boolean;
   guild_id?: string | null;
   auto_join_channels?: string[];
   skill_paths?: string[];
@@ -227,6 +230,7 @@ export function loadBotConfig(
     skill_paths: botEntry.skill_paths,
     rlm: botEntry.rlm,
     prompt_caching: botEntry.prompt_caching,
+    use_api_key: botEntry.use_api_key,
     mcp: botEntry.mcp,
     mcp_servers: registry.mcp_servers,
     tool_configs: registry.tool_configs,

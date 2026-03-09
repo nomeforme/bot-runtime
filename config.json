@@ -97,7 +97,8 @@
       "model": "claude-3-opus-20240229",
       "max_tokens": 1024,
       "tools": [],
-      "skip_system_prompt": true
+      "skip_system_prompt": true,
+      "use_api_key": true
     },
     {
       "name": "claude-3-sonnet",
@@ -105,6 +106,7 @@
       "prompt": "Standard",
       "max_tokens": 1024,
       "prompt_caching": false,
+      "use_api_key": true,
       "tools": ["fetch"]
     },
     {
@@ -153,6 +155,7 @@
       "prompt": "Standard",
       "max_tokens": 1024,
       "prompt_caching": false,
+      "use_api_key": true,
       "tools": ["fetch"]
     },
     {
@@ -161,6 +164,7 @@
       "prompt": "Standard",
       "max_tokens": 1024,
       "prompt_caching": false,
+      "use_api_key": true,
       "tools": ["fetch"]
     },
     {
@@ -183,6 +187,7 @@
       "prompt": "Standard",
       "max_tokens": 1024,
       "prompt_caching": false,
+      "use_api_key": true,
       "tools": ["fetch"]
     },
     {
@@ -198,6 +203,7 @@
       "prompt": "Standard",
       "max_tokens": 1024,
       "prompt_caching": false,
+      "use_api_key": true,
       "tools": ["fetch"]
     }
   ],

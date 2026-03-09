@@ -113,6 +113,7 @@ export class BotRuntime {
       model,
       toolHandlers,
       promptCaching: this.config.prompt_caching,
+      useApiKey: this.config.use_api_key,
       maxOutputTokens: this.config.max_tokens,
       skillPaths: this.config.skip_system_prompt ? undefined : this.config.skill_paths,
       rlm: this.config.skip_system_prompt ? undefined : this.config.rlm,
