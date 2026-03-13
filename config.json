@@ -71,7 +71,8 @@
         "/workspace/skills/connectome-ontology",
         "/workspace/skills/agent-spawning/claude-code",
         "/workspace/skills/agent-spawning/collaboration",
-        "/workspace/skills/agent-spawning/coordination"
+        "/workspace/skills/agent-spawning/coordination",
+        "/workspace/skills/autoresearch"
       ],
       "rlm": {
         "maxDepth": 2,
@@ -89,7 +90,8 @@
         "/workspace/skills/connectome-ontology",
         "/workspace/skills/agent-spawning/claude-code",
         "/workspace/skills/agent-spawning/collaboration",
-        "/workspace/skills/agent-spawning/coordination"
+        "/workspace/skills/agent-spawning/coordination",
+        "/workspace/skills/autoresearch"
       ]
     },
     {
@@ -119,7 +121,8 @@
         "/workspace/skills/connectome-ontology",
         "/workspace/skills/agent-spawning/claude-code",
         "/workspace/skills/agent-spawning/collaboration",
-        "/workspace/skills/agent-spawning/coordination"
+        "/workspace/skills/agent-spawning/coordination",
+        "/workspace/skills/autoresearch"
       ]
     },
     {
@@ -132,7 +135,8 @@
         "/workspace/skills/connectome-ontology",
         "/workspace/skills/agent-spawning/claude-code",
         "/workspace/skills/agent-spawning/collaboration",
-        "/workspace/skills/agent-spawning/coordination"
+        "/workspace/skills/agent-spawning/coordination",
+        "/workspace/skills/autoresearch"
       ]
     },
     {

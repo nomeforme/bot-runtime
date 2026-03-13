@@ -30,6 +30,10 @@ import { createDelegateTool, type DelegateActivationContext } from './tools/dele
 import { createAttachTool } from './tools/attach-tool.js';
 import { createSaveAttachmentTool } from './tools/save-attachment-tool.js';
 import { createListStreamsTool, createGetStreamContextTool, type StreamToolContext } from './tools/streams-tool.js';
+import { createEnlistTool, type EnlistToolContext } from './tools/enlist-tool.js';
+import { createContinueSubstreamTool, createContinueSubstreamContext, type ContinueSubstreamContext } from './tools/continue-substream-tool.js';
+import { createEnterSubstreamTool, createExitSubstreamTool, createSetAutotriggerTool, type SubstreamToolContext } from './tools/substream-tool.js';
+import { createInitExperimentTool, createRunExperimentTool, createLogExperimentTool, createExperimentDashboardTool, type ExperimentToolContext } from './tools/experiment-tool.js';
 
 export class BotRuntime {
   private config: BotRuntimeConfig;
@@ -42,12 +46,41 @@ export class BotRuntime {
   private agentId: string;
   private unsubscribeActivations?: () => void;
   private bindingClients: AxonBindingClient[] = [];
+  /** Timestamp of last facet delta received from subscription */
+  private lastDeltaReceived: number = Date.now();
+  /** Interval handle for subscription heartbeat check */
+  private heartbeatInterval?: ReturnType<typeof setInterval>;
   /** Mutable context shared with delegate tool — updated per activation */
   private delegateActivationCtx: DelegateActivationContext = {};
   /** Mutable context shared with terminal tool — updated per activation */
   private terminalVeilCtx: TerminalVeilContext = {};
   /** Mutable context shared with stream tools — updated per activation */
   private streamToolCtx: StreamToolContext = {};
+  /** Mutable context shared with continue_substream tool — reset per activation */
+  private continueSubstreamCtx: ContinueSubstreamContext = createContinueSubstreamContext();
+  /** Mutable context shared with experiment tools — updated per activation */
+  private experimentToolCtx: ExperimentToolContext = {};
+
+  /** Active substream — bot's activations redirect here */
+  private activeSubstream?: {
+    substreamName: string;
+    substreamId: string;         // "substream:<name>"
+    parentStreamId: string;      // originating channel
+  };
+
+  /** Autotrigger loop state (independent of substream) */
+  private autotriggerState?: {
+    enabled: boolean;
+    delayMs: number;
+    cycleCount: number;
+    /** Consecutive cycles with speech-only (no tool use) — collapse indicator */
+    speechOnlyCycles: number;
+    /** Max speech-only cycles before ejection (configurable via --max-speech-only) */
+    maxSpeechOnly: number;
+  };
+
+  /** Stream ID of last completed activation — for tool-initiated stream entry */
+  private lastActivationStreamId?: string;
 
   constructor(config: BotRuntimeConfig) {
     this.config = config;
@@ -161,6 +194,12 @@ export class BotRuntime {
   async stop(): Promise<void> {
     console.log(`[BotRuntime:${this.config.name}] Stopping...`);
 
+    // Stop subscription heartbeat
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = undefined;
+    }
+
     // Unsubscribe from activations
     if (this.unsubscribeActivations) {
       this.unsubscribeActivations();
@@ -232,6 +271,9 @@ export class BotRuntime {
         streamIds: [],
       },
       (delta: FacetDelta) => {
+        // Track last delta for subscription heartbeat
+        this.lastDeltaReceived = Date.now();
+
         if (delta.type !== 'added' || !delta.facet) return;
 
         const facet = delta.facet;
@@ -280,6 +322,63 @@ export class BotRuntime {
     );
 
     console.log(`[BotRuntime:${this.config.name}] Subscribed to activation events`);
+
+    // Start subscription heartbeat monitor
+    this.startSubscriptionHeartbeat();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Subscription heartbeat
+  // ---------------------------------------------------------------------------
+
+  /** How often to check for subscription liveness (ms) */
+  private static readonly HEARTBEAT_CHECK_INTERVAL = 30_000;
+  /** Max silence before assuming the subscription is dead (ms) */
+  private static readonly HEARTBEAT_TIMEOUT = 60_000;
+
+  /**
+   * Start a periodic check that the subscription is still alive.
+   * If no facet delta has been received within HEARTBEAT_TIMEOUT,
+   * verify connectivity via health check and resubscribe.
+   */
+  private startSubscriptionHeartbeat(): void {
+    // Clear any existing heartbeat interval (e.g. from a previous subscribe cycle)
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+    }
+
+    this.heartbeatInterval = setInterval(async () => {
+      const silenceMs = Date.now() - this.lastDeltaReceived;
+      if (silenceMs < BotRuntime.HEARTBEAT_TIMEOUT) return;
+
+      const prefix = `[BotRuntime:${this.config.name}]`;
+      console.log(`${prefix} Subscription heartbeat timeout — no delta in ${Math.round(silenceMs / 1000)}s, checking connectivity...`);
+
+      // Lightweight health check to verify server is reachable
+      try {
+        const health = await this.grpcClient.health(5000);
+        if (!health.healthy) {
+          console.warn(`${prefix} Health check returned unhealthy, will retry on next heartbeat`);
+          return;
+        }
+        console.log(`${prefix} Health check OK (seq=${health.currentSequence}) — resubscribing`);
+      } catch (err: any) {
+        console.warn(`${prefix} Health check failed: ${err.message} — will retry on next heartbeat`);
+        return;
+      }
+
+      // Unsubscribe old stream and resubscribe
+      if (this.unsubscribeActivations) {
+        this.unsubscribeActivations();
+        this.unsubscribeActivations = undefined;
+      }
+
+      // Reset the timestamp so we don't immediately re-trigger
+      this.lastDeltaReceived = Date.now();
+
+      console.log(`${prefix} Subscription heartbeat timeout — resubscribing`);
+      this.subscribeToActivations();
+    }, BotRuntime.HEARTBEAT_CHECK_INTERVAL);
   }
 
   /**
@@ -301,7 +400,7 @@ export class BotRuntime {
   }
 
   /**
-   * Handle an agent-command facet (e.g. !stop, !steer from chat).
+   * Handle an agent-command facet (e.g. !stop, !steer, !stream from chat).
    */
   private handleAgentCommand(facet: any): void {
     const state = facet.state || {};
@@ -314,11 +413,20 @@ export class BotRuntime {
 
     switch (state.type) {
       case 'stop': {
+        // Clear autotrigger state — !stop always halts autonomous loops
+        if (this.autotriggerState?.enabled) {
+          this.autotriggerState.enabled = false;
+          console.log(`${prefix} !stop: autotrigger disabled`);
+        }
+
         if (this.effector && this.effector.abort()) {
           console.log(`${prefix} !stop: cycle aborted`);
-        } else {
+        } else if (!this.autotriggerState) {
           console.log(`${prefix} !stop: no active cycle to abort`);
         }
+
+        // Clear typing indicators on both substream and parent streams
+        this.emitTypingStop(this.lastActivationStreamId);
         break;
       }
       case 'steer': {
@@ -332,6 +440,59 @@ export class BotRuntime {
         } else {
           console.log(`${prefix} !steer: no active cycle to steer`);
         }
+
+        // Also emit steer message to active substream so participants
+        // see it in their context on the next cycle
+        if (this.activeSubstream) {
+          this.grpcClient.emitEvent('agent:speech', {
+            agentName: 'system',
+            agentId: 'system',
+            content: `[!steer] ${message}`,
+            streamId: this.activeSubstream.substreamId,
+          }).catch(() => {});
+        }
+        break;
+      }
+      case 'workflow': {
+        const enable = state.enable !== false;
+        // Event payload uses workflowName as the wire format key
+        const name = state.workflowName;
+        if (enable && name) {
+          const sourceStreamId = state.streamId || this.lastActivationStreamId || 'unknown';
+          this.enterSubstreamInternal(name, sourceStreamId).then(() => {
+            console.log(`${prefix} !stream in: entered "${name}"`);
+          }).catch((err: any) => {
+            console.error(`${prefix} !stream in: failed to enter "${name}": ${err.message}`);
+          });
+        } else {
+          this.exitSubstreamInternal();
+          console.log(`${prefix} !stream out`);
+        }
+        break;
+      }
+      case 'autotrigger': {
+        const enable = state.enable !== false;
+
+        if (!enable) {
+          if (this.autotriggerState?.enabled) {
+            this.autotriggerState.enabled = false;
+          }
+          console.log(`${prefix} !autotrigger off`);
+          break;
+        }
+
+        // Enable autotrigger — pure loop control, no substream creation
+        const maxSpeechOnly = typeof state.maxSpeechOnly === 'number'
+          ? state.maxSpeechOnly
+          : BotRuntime.AUTOTRIGGER_DEFAULT_MAX_SPEECH_ONLY;
+        this.autotriggerState = {
+          enabled: true,
+          delayMs: 2000,
+          cycleCount: 0,
+          speechOnlyCycles: 0,
+          maxSpeechOnly,
+        };
+        console.log(`${prefix} !autotrigger on maxSpeechOnly=${maxSpeechOnly}`);
         break;
       }
       default:
@@ -354,6 +515,52 @@ export class BotRuntime {
       return;
     }
 
+    const prefix = `[BotRuntime:${this.config.name}]`;
+
+    // Filter: ignore activations on substreams this bot hasn't entered
+    // (prevents other bots from responding to relayed messages on someone else's substream)
+    if (streamId?.startsWith('substream:') &&
+        (!this.activeSubstream || this.activeSubstream.substreamId !== streamId)) {
+      console.log(`${prefix} Ignoring activation on foreign substream ${streamId}`);
+      return;
+    }
+
+    // Activation redirect: if bot is in a stream and the activation comes
+    // from the parent channel, relay the user message and redirect to the stream
+    if (this.activeSubstream && streamId === this.activeSubstream.parentStreamId) {
+      const messageContent = state.metadata?.messageContent;
+      const authorName = state.metadata?.authorName || 'user';
+
+      console.log(`${prefix} Redirecting activation from ${streamId} → ${this.activeSubstream.substreamId}`);
+
+      // Relay user message as agent:speech on the substream so it appears in context
+      const relayAndActivate = async () => {
+        if (messageContent) {
+          await this.grpcClient.emitEvent('agent:speech', {
+            agentName: authorName,
+            agentId: 'relay',
+            content: messageContent,
+            streamId: this.activeSubstream!.substreamId,
+            sourceStreamId: streamId,
+          });
+        }
+
+        await this.grpcClient.activateAgent(
+          `agent-bot-${this.agentId}`,
+          this.activeSubstream!.substreamId,
+          {
+            reason: state.reason || 'redirected',
+            metadata: { ...state.metadata, targetBot: this.config.name, redirectedFrom: streamId },
+          },
+        );
+      };
+
+      relayAndActivate().catch((err: any) => {
+        console.error(`${prefix} Redirect failed: ${err.message}`);
+      });
+      return; // skip parent processing
+    }
+
     const activation: UnifiedActivation = {
       streamId,
       platformContext: {
@@ -366,7 +573,10 @@ export class BotRuntime {
       continuation: state.metadata?.continuation === 'true',
     };
 
-    console.log(`[BotRuntime:${this.config.name}] Activation on ${streamId} (reason: ${state.reason || 'unknown'})`);
+    console.log(`${prefix} Activation on ${streamId} (reason: ${state.reason || 'unknown'})`);
+
+    // Track for tool-initiated substream entry
+    this.lastActivationStreamId = streamId;
 
     // Update shared tool contexts for this activation
     this.delegateActivationCtx.streamId = streamId;
@@ -378,25 +588,300 @@ export class BotRuntime {
     this.streamToolCtx.agentId = this.agentId;
     this.streamToolCtx.currentStreamId = streamId;
     this.streamToolCtx.grpcClient = this.grpcClient;
+    (this.streamToolCtx as any).agentName = this.config.name;
 
-    this.effector.handleActivation(activation).then(() => {
+    // Update experiment tool context for this activation
+    this.experimentToolCtx.agentName = this.config.name;
+    this.experimentToolCtx.agentId = this.agentId;
+    this.experimentToolCtx.streamId = streamId;
+    this.experimentToolCtx.grpcClient = this.grpcClient;
+    this.experimentToolCtx.parentStreamId = this.activeSubstream?.parentStreamId;
+
+    // Reset continue_substream context for this cycle
+    this.continueSubstreamCtx.continuationRequested = false;
+    this.continueSubstreamCtx.nextReason = undefined;
+    this.continueSubstreamCtx.isSubstreamActive =
+      !!this.activeSubstream || (!!this.autotriggerState?.enabled);
+
+    this.effector.handleActivation(activation).then((result) => {
       // Signal cycle completion so axon can clear typing indicator
-      this.grpcClient.emitEvent('agent:typing-stop', {
-        targetAgent: this.config.name,
-        streamId,
-      }).catch(() => {});
+      this.emitTypingStop(streamId);
+
+      // Track whether this cycle used substantive tools (for collapse detection)
+      // Exclude continue_substream itself — it's a control signal, not work
+      // Note: pi-agent uses 'toolCall' type (not Anthropic's 'tool_use')
+      const usedSubstantiveTools = result?.messages?.some((m: any) =>
+        Array.isArray(m.content) && m.content.some((b: any) =>
+          (b.type === 'tool_use' || b.type === 'toolCall') && b.name !== 'continue_substream'),
+      ) ?? false;
+      this.trackAutotriggerCycle(usedSubstantiveTools);
+
+      // Autotrigger: gate reactivation on continue_substream
+      const continuationRequested = this.continueSubstreamCtx.continuationRequested;
+
+      if (continuationRequested) {
+        const reason = this.continueSubstreamCtx.nextReason;
+        if (reason) {
+          console.log(`${prefix} Continuation requested: ${reason}`);
+        }
+        this.scheduleAutotrigger(streamId);
+      } else {
+        // Bot didn't request continuation — end the loop naturally
+        this.endAutotriggerNaturally(streamId);
+      }
     }).catch((err) => {
-      console.error(`[BotRuntime:${this.config.name}] Activation error on ${streamId}: ${err.message}`);
-      this.grpcClient.emitEvent('agent:typing-stop', {
-        targetAgent: this.config.name,
-        streamId,
-      }).catch(() => {});
+      console.error(`${prefix} Activation error on ${streamId}: ${err.message}`);
+      this.emitTypingStop(streamId);
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Autotrigger
+  // ---------------------------------------------------------------------------
+
+  /** Default max consecutive speech-only cycles before collapse ejection */
+  private static readonly AUTOTRIGGER_DEFAULT_MAX_SPEECH_ONLY = 5;
+
+  /** Default autotrigger delay between cycles (ms) */
+  private static readonly AUTOTRIGGER_DEFAULT_DELAY = 2000;
+  /** Max autotrigger delay after backoff (ms) */
+  private static readonly AUTOTRIGGER_MAX_DELAY = 30000;
+  /** Backoff multiplier on error */
+  private static readonly AUTOTRIGGER_BACKOFF = 1.5;
+
+  /**
+   * Track whether an autotrigger cycle used tools. If too many consecutive
+   * cycles produce speech-only responses (no tool use), this indicates mode
+   * collapse — the agent is looping without making progress. Eject by
+   * disabling autotrigger and notifying.
+   */
+  private trackAutotriggerCycle(usedTools: boolean): void {
+    const at = this.autotriggerState;
+    if (!at || !at.enabled) return;
+
+    if (usedTools) {
+      at.speechOnlyCycles = 0;
+    } else {
+      at.speechOnlyCycles++;
+      const prefix = `[BotRuntime:${this.config.name}]`;
+      if (at.speechOnlyCycles >= at.maxSpeechOnly) {
+        at.enabled = false;
+        console.warn(`${prefix} Autotrigger EJECTED: ${at.speechOnlyCycles} consecutive speech-only cycles (mode collapse detected)`);
+        // Notify via speech on the substream or current stream
+        const notifyStream = this.activeSubstream?.substreamId || this.lastActivationStreamId || 'unknown';
+        this.grpcClient.emitEvent('agent:speech', {
+          agentName: this.config.name,
+          agentId: this.config.name,
+          content: `[autotrigger halted after ${at.speechOnlyCycles} idle cycles] Use \`!autotrigger\` to re-enable.`,
+          streamId: notifyStream,
+        }).catch(() => {});
+      } else {
+        console.log(`${prefix} Autotrigger: speech-only cycle ${at.speechOnlyCycles}/${at.maxSpeechOnly}`);
+      }
+    }
+  }
+
+  /**
+   * End an autotrigger loop naturally because the bot didn't call continue_substream.
+   * This is the normal exit path — the bot chose not to continue.
+   */
+  private endAutotriggerNaturally(streamId: string): void {
+    const at = this.autotriggerState;
+    if (!at || !at.enabled) return;
+
+    at.enabled = false;
+    const prefix = `[BotRuntime:${this.config.name}]`;
+    console.log(`${prefix} Autotrigger ended naturally after ${at.cycleCount} cycles (bot did not request continuation)`);
+
+    // Notify on the substream or current stream
+    const notifyStream = this.activeSubstream?.substreamId || streamId;
+    this.grpcClient.emitEvent('agent:speech', {
+      agentName: this.config.name,
+      agentId: this.config.name,
+      content: `[autotrigger ended after ${at.cycleCount} cycles]`,
+      streamId: notifyStream,
+    }).catch(() => {});
+  }
+
+  /**
+   * Schedule a reactivation after cycle completion if autotrigger is enabled.
+   * Reactivates on the substream if active, otherwise on the completed stream.
+   */
+  private async scheduleAutotrigger(completedStreamId: string): Promise<void> {
+    const at = this.autotriggerState;
+    if (!at || !at.enabled) return;
+
+    at.cycleCount++;
+    const prefix = `[BotRuntime:${this.config.name}]`;
+
+    // Target: substream if active, otherwise the stream the cycle just ran on
+    const reactivateStreamId = this.activeSubstream?.substreamId || completedStreamId;
+
+    console.log(`${prefix} Autotrigger: scheduling reactivation on ${reactivateStreamId} in ${at.delayMs}ms (cycle #${at.cycleCount})`);
+
+    setTimeout(async () => {
+      // Re-check: autotrigger may have been disabled during the delay
+      if (!this.autotriggerState?.enabled) {
+        console.log(`${prefix} Autotrigger: cancelled (disabled during delay)`);
+        return;
+      }
+
+      try {
+        await this.grpcClient.activateAgent(
+          `agent-bot-${this.agentId}`,
+          reactivateStreamId,
+          {
+            reason: `autotrigger cycle #${this.autotriggerState.cycleCount}`,
+            priority: 'normal',
+            metadata: {
+              targetBot: this.config.name,
+              autotrigger: 'true',
+              cycleCount: String(this.autotriggerState.cycleCount),
+              streamType: this.activeSubstream ? 'substream' : 'channel',
+              substreamName: this.activeSubstream?.substreamName || '',
+            },
+          },
+        );
+        // Success — reset delay to default
+        this.autotriggerState.delayMs = BotRuntime.AUTOTRIGGER_DEFAULT_DELAY;
+        console.log(`${prefix} Autotrigger: reactivated on ${reactivateStreamId}`);
+      } catch (err: any) {
+        // Backoff on error
+        this.autotriggerState.delayMs = Math.min(
+          this.autotriggerState.delayMs * BotRuntime.AUTOTRIGGER_BACKOFF,
+          BotRuntime.AUTOTRIGGER_MAX_DELAY,
+        );
+        console.error(`${prefix} Autotrigger: reactivation failed (next delay: ${this.autotriggerState.delayMs}ms): ${err.message}`);
+        // Try again with backed-off delay
+        this.scheduleAutotrigger(completedStreamId);
+      }
+    }, at.delayMs);
+  }
+
+  /**
+   * Ensure the substream workspace directory exists.
+   * Creates /workspace/shared/substreams/{name}/ if it doesn't exist.
+   */
+  private async ensureSubstreamDirectory(substreamName: string): Promise<void> {
+    const { mkdir } = await import('fs/promises');
+    const dir = `/workspace/shared/substreams/${substreamName}`;
+    try {
+      await mkdir(dir, { recursive: true });
+      console.log(`[BotRuntime:${this.config.name}] Substream directory ready: ${dir}`);
+    } catch (err: any) {
+      console.warn(`[BotRuntime:${this.config.name}] Could not create substream directory ${dir}: ${err.message}`);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Substream entry / exit
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Enter a named substream. Creates the stream (idempotent), workspace
+   * directory, and emits an orientation message.
+   */
+  private async enterSubstreamInternal(name: string, parentStreamId: string): Promise<void> {
+    const prefix = `[BotRuntime:${this.config.name}]`;
+
+    // Exit current substream if any
+    if (this.activeSubstream) {
+      this.exitSubstreamInternal();
+    }
+
+    const substreamId = `substream:${name}`;
+
+    // Create substream (idempotent)
+    try {
+      await this.grpcClient.createStream(
+        substreamId,
+        'substream',
+        {
+          createdBy: this.config.name,
+          substreamName: name,
+          participants: this.config.name,
+        },
+        parentStreamId,
+      );
+      console.log(`${prefix} Substream ready: ${substreamId} (parent: ${parentStreamId})`);
+    } catch (err: any) {
+      // Assume the stream exists and continue
+      console.warn(`${prefix} CreateStream for ${substreamId}: ${err.message} (continuing anyway)`);
+    }
+
+    // Create workspace directory
+    await this.ensureSubstreamDirectory(name);
+
+    // Set state
+    this.activeSubstream = {
+      substreamName: name,
+      substreamId,
+      parentStreamId,
+    };
+
+    // Emit orientation message on the substream
+    this.grpcClient.emitEvent('agent:speech', {
+      agentName: this.config.name,
+      agentId: this.config.name,
+      content: `Substream "${name}" entered. Workspace: /workspace/shared/substreams/${name}/\nActivations from ${parentStreamId} will be redirected here.`,
+      streamId: substreamId,
+    }).catch(() => {});
+  }
+
+  /**
+   * Exit the current substream. Disables autotrigger (context changes).
+   */
+  private exitSubstreamInternal(): void {
+    if (!this.activeSubstream) return;
+
+    const prefix = `[BotRuntime:${this.config.name}]`;
+    const ss = this.activeSubstream;
+
+    // Emit exit message on the substream
+    this.grpcClient.emitEvent('agent:speech', {
+      agentName: this.config.name,
+      agentId: this.config.name,
+      content: `[substream "${ss.substreamName}" exited]`,
+      streamId: ss.substreamId,
+    }).catch(() => {});
+
+    // Clear typing indicators on both substream and parent streams
+    this.emitTypingStop(ss.substreamId);
+
+    // If autotrigger is active, disable it (context would change)
+    if (this.autotriggerState?.enabled) {
+      this.autotriggerState.enabled = false;
+      console.log(`${prefix} Autotrigger disabled (substream exited)`);
+    }
+
+    this.activeSubstream = undefined;
+    console.log(`${prefix} Exited substream "${ss.substreamName}"`);
   }
 
   // ---------------------------------------------------------------------------
   // Private
   // ---------------------------------------------------------------------------
+
+  /**
+   * Emit typing-stop for a stream AND the parent stream if in a substream.
+   * The discord-axon keys typing intervals by the parent Discord stream,
+   * so we must stop typing there too when the cycle ran on a substream.
+   */
+  private emitTypingStop(streamId?: string): void {
+    if (streamId) {
+      this.grpcClient.emitEvent('agent:typing-stop', {
+        targetAgent: this.config.name,
+        streamId,
+      }).catch(() => {});
+    }
+    // Also emit for the parent stream if we're in a substream
+    if (this.activeSubstream) {
+      this.grpcClient.emitEvent('agent:typing-stop', {
+        targetAgent: this.config.name,
+        streamId: this.activeSubstream.parentStreamId,
+      }).catch(() => {});
+    }
+  }
 
   /** Advertise axon bindings to axons with retry */
   private advertiseAxonBindings(): void {
@@ -487,7 +972,61 @@ export class BotRuntime {
 
       toolHandlers.push(createListStreamsTool(this.streamToolCtx));
       toolHandlers.push(createGetStreamContextTool(this.streamToolCtx));
-      console.log(`[BotRuntime:${this.config.name}] stream awareness tools enabled`);
+      toolHandlers.push(createEnlistTool(this.streamToolCtx as EnlistToolContext));
+      toolHandlers.push(createContinueSubstreamTool(this.continueSubstreamCtx));
+
+      // Substream + autotrigger tools
+      const substreamCtx: SubstreamToolContext = {
+        enterSubstream: async (name: string) => {
+          const parentStreamId = this.lastActivationStreamId || 'unknown';
+          await this.enterSubstreamInternal(name, parentStreamId);
+          return `Entered substream "substream:${name}" (parent: ${parentStreamId})`;
+        },
+        exitSubstream: async () => {
+          if (!this.activeSubstream) {
+            return 'No active substream to exit.';
+          }
+          const name = this.activeSubstream.substreamName;
+          this.exitSubstreamInternal();
+          return `Exited substream "${name}". Activations return to parent channel.`;
+        },
+        setAutotrigger: (enabled: boolean, maxSpeechOnly?: number) => {
+          if (enabled) {
+            this.autotriggerState = {
+              enabled: true,
+              delayMs: 2000,
+              cycleCount: 0,
+              speechOnlyCycles: 0,
+              maxSpeechOnly: maxSpeechOnly ?? BotRuntime.AUTOTRIGGER_DEFAULT_MAX_SPEECH_ONLY,
+            };
+            const target = this.activeSubstream
+              ? `substream substream:${this.activeSubstream.substreamName}`
+              : 'current channel';
+            return `Autotrigger enabled on ${target}. Call continue_substream each cycle to keep going.`;
+          } else {
+            if (this.autotriggerState?.enabled) {
+              this.autotriggerState.enabled = false;
+            }
+            return 'Autotrigger disabled.';
+          }
+        },
+        getActiveSubstream: () => {
+          if (!this.activeSubstream) return null;
+          return { name: this.activeSubstream.substreamName, streamId: this.activeSubstream.substreamId };
+        },
+        isAutotriggerActive: () => !!this.autotriggerState?.enabled,
+      };
+      toolHandlers.push(createEnterSubstreamTool(substreamCtx));
+      toolHandlers.push(createExitSubstreamTool(substreamCtx));
+      toolHandlers.push(createSetAutotriggerTool(substreamCtx));
+
+      // Experiment tools (autoresearch loop)
+      toolHandlers.push(createInitExperimentTool(this.experimentToolCtx));
+      toolHandlers.push(createRunExperimentTool(this.experimentToolCtx, this.processRegistry));
+      toolHandlers.push(createLogExperimentTool(this.experimentToolCtx, this.processRegistry));
+      toolHandlers.push(createExperimentDashboardTool(this.experimentToolCtx));
+
+      console.log(`[BotRuntime:${this.config.name}] stream awareness + enlist + substream + continue_substream + experiment tools enabled`);
     }
 
     return toolHandlers;
