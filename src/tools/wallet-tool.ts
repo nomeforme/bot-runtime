@@ -313,22 +313,21 @@ export function createTransferTool(ctx: WalletToolContext): ToolHandler {
 
         try {
           const {
-            PublicKey, Transaction, SystemProgram, sendAndConfirmTransaction,
+            PublicKey, Transaction, SystemProgram,
           } = await import('@solana/web3.js');
 
           const toPubkey = new PublicKey(to);
+          let tx: InstanceType<typeof Transaction>;
 
           if (token === 'NATIVE' || token === 'SOL') {
             const lamports = Math.round(amountNum * 1e9);
-            const tx = new Transaction().add(
+            tx = new Transaction().add(
               SystemProgram.transfer({
                 fromPubkey: ctx.solanaKeypair.publicKey,
                 toPubkey,
                 lamports,
               }),
             );
-            const signature = await sendAndConfirmTransaction(connection, tx, [ctx.solanaKeypair]);
-            return `Transfer sent!\nTx: ${signature}\nhttps://solscan.io/tx/${signature}`;
           } else if (token === 'USDC') {
             // SPL USDC transfer using raw token program instruction
             // Uses @solana/web3.js TransactionInstruction directly (no @solana/spl-token dep)
@@ -363,12 +362,45 @@ export function createTransferTool(ctx: WalletToolContext): ToolHandler {
               data: dataBuffer,
             });
 
-            const tx = new Transaction().add(transferIx);
-            const signature = await sendAndConfirmTransaction(connection, tx, [ctx.solanaKeypair]);
-            return `USDC transfer sent!\nTx: ${signature}\nhttps://solscan.io/tx/${signature}`;
+            tx = new Transaction().add(transferIx);
           } else {
             return `Error: unsupported token "${token}". Use "native" or "USDC".`;
           }
+
+          // Send and confirm via HTTP polling (avoids WebSocket signatureSubscribe
+          // which fails on many RPC providers including Alchemy)
+          const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+          tx.recentBlockhash = blockhash;
+          tx.feePayer = ctx.solanaKeypair.publicKey;
+
+          const signature = await connection.sendTransaction(tx, [ctx.solanaKeypair], {
+            skipPreflight: false,
+            preflightCommitment: 'confirmed',
+          });
+
+          // Poll getSignatureStatuses for confirmation (pure HTTP, no WebSocket)
+          const tokenLabel = (token === 'NATIVE' || token === 'SOL') ? 'SOL' : token;
+          const start = Date.now();
+          while (Date.now() - start < 60_000) {
+            const { value } = await connection.getSignatureStatuses([signature]);
+            const status = value[0];
+            if (status) {
+              if (status.err) {
+                return `${tokenLabel} transfer failed on-chain: ${JSON.stringify(status.err)}\nTx: ${signature}\nhttps://solscan.io/tx/${signature}`;
+              }
+              if (status.confirmationStatus === 'confirmed' || status.confirmationStatus === 'finalized') {
+                return `${tokenLabel} transfer confirmed!\nTx: ${signature}\nhttps://solscan.io/tx/${signature}`;
+              }
+            }
+            // Also check if blockhash expired (tx will never land)
+            const currentHeight = await connection.getBlockHeight('confirmed');
+            if (currentHeight > lastValidBlockHeight) {
+              return `${tokenLabel} transfer sent but blockhash expired before confirmation.\nTx: ${signature}\nhttps://solscan.io/tx/${signature}`;
+            }
+            await new Promise(r => setTimeout(r, 2000));
+          }
+
+          return `${tokenLabel} transfer sent (confirmation pending).\nTx: ${signature}\nhttps://solscan.io/tx/${signature}`;
         } catch (err: any) {
           return `Transfer failed: ${err.message}`;
         }
