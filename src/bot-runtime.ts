@@ -47,8 +47,6 @@ export class BotRuntime {
   private agentId: string;
   private unsubscribeActivations?: () => void;
   private bindingClients: AxonBindingClient[] = [];
-  /** Timestamp of last facet delta received from subscription */
-  private lastDeltaReceived: number = Date.now();
   /** Interval handle for subscription heartbeat check */
   private heartbeatInterval?: ReturnType<typeof setInterval>;
   /** Mutable context shared with delegate tool — updated per activation */
@@ -214,6 +212,10 @@ export class BotRuntime {
       this.heartbeatInterval = undefined;
     }
 
+    // Stop axon binding keepalives
+    for (const k of this.bindingKeepalives) clearInterval(k);
+    this.bindingKeepalives = [];
+
     // Unsubscribe from activations
     if (this.unsubscribeActivations) {
       this.unsubscribeActivations();
@@ -285,9 +287,6 @@ export class BotRuntime {
         streamIds: [],
       },
       (delta: FacetDelta) => {
-        // Track last delta for subscription heartbeat
-        this.lastDeltaReceived = Date.now();
-
         if (delta.type !== 'added' || !delta.facet) return;
 
         const facet = delta.facet;
@@ -345,53 +344,39 @@ export class BotRuntime {
   // Subscription heartbeat
   // ---------------------------------------------------------------------------
 
-  /** How often to check for subscription liveness (ms) */
-  private static readonly HEARTBEAT_CHECK_INTERVAL = 30_000;
-  /** Max silence before assuming the subscription is dead (ms) */
-  private static readonly HEARTBEAT_TIMEOUT = 60_000;
+  /** How often to check server reachability (ms) */
+  private static readonly HEARTBEAT_CHECK_INTERVAL = 60_000;
 
   /**
-   * Start a periodic check that the subscription is still alive.
-   * If no facet delta has been received within HEARTBEAT_TIMEOUT,
-   * verify connectivity via health check and resubscribe.
+   * Periodic server reachability check.
+   *
+   * gRPC keepalive (30s ping / 5s timeout) handles transport-level failure
+   * detection — when the stream dies, the client's stream.on('end'/'error')
+   * handlers auto-reconnect. This heartbeat is a secondary safety net that
+   * detects server unreachability and resubscribes if needed.
+   *
+   * We do NOT compare global server sequences against filtered subscription
+   * deltas — the global sequence advances for all facet types, but this
+   * subscription only receives specific types (agent-activation, etc.).
+   * Sequence divergence is normal, not a sign of staleness.
    */
   private startSubscriptionHeartbeat(): void {
-    // Clear any existing heartbeat interval (e.g. from a previous subscribe cycle)
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
     }
 
     this.heartbeatInterval = setInterval(async () => {
-      const silenceMs = Date.now() - this.lastDeltaReceived;
-      if (silenceMs < BotRuntime.HEARTBEAT_TIMEOUT) return;
-
       const prefix = `[BotRuntime:${this.config.name}]`;
-      console.log(`${prefix} Subscription heartbeat timeout — no delta in ${Math.round(silenceMs / 1000)}s, checking connectivity...`);
 
-      // Lightweight health check to verify server is reachable
       try {
         const health = await this.grpcClient.health(5000);
         if (!health.healthy) {
-          console.warn(`${prefix} Health check returned unhealthy, will retry on next heartbeat`);
-          return;
+          console.warn(`${prefix} Health check returned unhealthy — will retry next cycle`);
         }
-        console.log(`${prefix} Health check OK (seq=${health.currentSequence}) — resubscribing`);
+        // Server reachable — gRPC keepalive handles stream liveness
       } catch (err: any) {
-        console.warn(`${prefix} Health check failed: ${err.message} — will retry on next heartbeat`);
-        return;
+        console.warn(`${prefix} Health check failed: ${err.message} — gRPC keepalive will handle reconnection`);
       }
-
-      // Unsubscribe old stream and resubscribe
-      if (this.unsubscribeActivations) {
-        this.unsubscribeActivations();
-        this.unsubscribeActivations = undefined;
-      }
-
-      // Reset the timestamp so we don't immediately re-trigger
-      this.lastDeltaReceived = Date.now();
-
-      console.log(`${prefix} Subscription heartbeat timeout — resubscribing`);
-      this.subscribeToActivations();
     }, BotRuntime.HEARTBEAT_CHECK_INTERVAL);
   }
 
@@ -956,37 +941,82 @@ export class BotRuntime {
     }
   }
 
+  /** Keepalive interval handles for axon binding re-advertisement */
+  private bindingKeepalives: ReturnType<typeof setInterval>[] = [];
+
   private async advertiseWithRetry(
     platform: string, axonHost: string, host: string, port: number,
-    credentials: Record<string, string>, maxAttempts = 10
+    credentials: Record<string, string>
   ): Promise<void> {
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const prefix = `[BotRuntime:${this.config.name}]`;
+    const binding = { agentName: this.config.name, platform, credentials };
+    let activeClient: AxonBindingClient | null = null;
+
+    const doAdvertise = async (): Promise<boolean> => {
+      // Try existing client first
+      if (activeClient?.isConnected()) {
+        try {
+          const result = await activeClient.advertise(binding);
+          return result.success;
+        } catch {
+          activeClient.disconnect();
+          activeClient = null;
+        }
+      }
+      // Create new connection
       const client = new AxonBindingClient({ host, port });
       try {
         await client.connect();
-        const result = await client.advertise({
-          agentName: this.config.name,
-          platform,
-          credentials,
-        });
-        this.bindingClients.push(client);
+        const result = await client.advertise(binding);
         if (result.success) {
-          console.log(`[BotRuntime:${this.config.name}] Advertised ${platform} binding to ${axonHost}`);
+          activeClient = client;
+          return true;
         } else {
-          console.error(`[BotRuntime:${this.config.name}] Binding rejected by ${axonHost}: ${result.error}`);
+          console.error(`${prefix} Binding rejected by ${axonHost}: ${result.error}`);
+          client.disconnect();
+          return false;
         }
-        return;
-      } catch (error: any) {
+      } catch {
         client.disconnect();
-        if (attempt < maxAttempts) {
-          const delay = Math.min(2000 * attempt, 15000);
-          console.warn(`[BotRuntime:${this.config.name}] ${platform} binding to ${axonHost} failed (attempt ${attempt}/${maxAttempts}), retrying in ${delay}ms`);
-          await new Promise(r => setTimeout(r, delay));
-        } else {
-          console.error(`[BotRuntime:${this.config.name}] ${platform} binding to ${axonHost} failed after ${maxAttempts} attempts: ${error.message}`);
-        }
+        return false;
+      }
+    };
+
+    // Initial advertisement with retry
+    for (let attempt = 1; attempt <= 10; attempt++) {
+      if (await doAdvertise()) {
+        console.log(`${prefix} Advertised ${platform} binding to ${axonHost}`);
+        break;
+      }
+      if (attempt < 10) {
+        const delay = Math.min(2000 * attempt, 15000);
+        console.warn(`${prefix} ${platform} binding to ${axonHost} failed (attempt ${attempt}/10), retrying in ${delay}ms`);
+        await new Promise(r => setTimeout(r, delay));
+      } else {
+        console.error(`${prefix} ${platform} binding to ${axonHost} failed after 10 attempts`);
       }
     }
+
+    // Keepalive: re-advertise to handle axon restarts.
+    // Reuses existing connection when possible. Silent on success (no log spam).
+    // Only logs when reconnecting after a failure.
+    let wasDown = false;
+    const keepalive = setInterval(async () => {
+      try {
+        if (await doAdvertise()) {
+          if (wasDown) {
+            console.log(`${prefix} Re-advertised ${platform} binding to ${axonHost} (axon recovered)`);
+            wasDown = false;
+          }
+        } else {
+          wasDown = true;
+        }
+      } catch {
+        wasDown = true;
+      }
+    }, 30_000);
+
+    this.bindingKeepalives.push(keepalive);
   }
 
   /** Initialize tools from config: tool_configs (cli/http) + MCP servers */
