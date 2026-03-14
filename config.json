@@ -4,7 +4,10 @@
       "name": "everything",
       "transport": "stdio",
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-everything"]
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-everything"
+      ]
     },
     {
       "name": "wolfram",
@@ -18,7 +21,10 @@
       "name": "glitchtip",
       "transport": "stdio",
       "command": "npx",
-      "args": ["-y", "mcp-glitchtip"],
+      "args": [
+        "-y",
+        "mcp-glitchtip"
+      ],
       "env": {
         "GLITCHTIP_BASE_URL": "http://glitchtip:8080",
         "GLITCHTIP_TOKEN": "${GLITCHTIP_API_TOKEN}",
@@ -37,8 +43,22 @@
       "name": "polymarket",
       "binary": "polymarket",
       "description": "Query Polymarket prediction markets. Key commands:\n- markets list [--limit N] [--active true]\n- markets search <query> [--limit N]\n- markets get <id-or-slug>\n- events list [--tag TAG] [--limit N]\n- events get <id>\n- clob price <token_id> --side buy|sell\n- clob midpoint <token_id>\n- clob book <token_id>\n- clob price-history <token_id> --interval 1d --fidelity 100\n- data leaderboard [--period month] [--limit N]\n- tags list\n- sports list\nAll output is JSON.",
-      "default_args": ["-o", "json"],
-      "allowed_subcommands": ["markets", "events", "clob", "data", "tags", "series", "comments", "profiles", "sports", "status"],
+      "default_args": [
+        "-o",
+        "json"
+      ],
+      "allowed_subcommands": [
+        "markets",
+        "events",
+        "clob",
+        "data",
+        "tags",
+        "series",
+        "comments",
+        "profiles",
+        "sports",
+        "status"
+      ],
       "timeout_ms": 30000
     },
     {
@@ -66,13 +86,20 @@
       "model": "claude-opus-4-6",
       "prompt": "Standard",
       "max_tokens": 16384,
-      "tools": ["fetch", "polymarket", "terminal", "process", "delegate"],
+      "tools": [
+        "fetch",
+        "polymarket",
+        "terminal",
+        "process",
+        "delegate"
+      ],
       "skill_paths": [
         "/workspace/skills/connectome-ontology",
         "/workspace/skills/agent-spawning/claude-code",
         "/workspace/skills/agent-spawning/collaboration",
         "/workspace/skills/agent-spawning/coordination",
-        "/workspace/skills/autoresearch"
+        "/workspace/skills/autoresearch",
+        "/workspace/skills/economic-operations"
       ],
       "rlm": {
         "maxDepth": 2,
@@ -85,13 +112,20 @@
       "model": "claude-sonnet-4-6",
       "prompt": "Standard",
       "max_tokens": 16384,
-      "tools": ["fetch", "terminal", "process", "delegate"],
+      "tools": [
+        "fetch",
+        "polymarket",
+        "terminal",
+        "process",
+        "delegate"
+      ],
       "skill_paths": [
         "/workspace/skills/connectome-ontology",
         "/workspace/skills/agent-spawning/claude-code",
         "/workspace/skills/agent-spawning/collaboration",
         "/workspace/skills/agent-spawning/coordination",
-        "/workspace/skills/autoresearch"
+        "/workspace/skills/autoresearch",
+        "/workspace/skills/economic-operations"
       ]
     },
     {
@@ -109,20 +143,29 @@
       "max_tokens": 1024,
       "prompt_caching": false,
       "use_api_key": true,
-      "tools": ["fetch"]
+      "tools": [
+        "fetch"
+      ]
     },
     {
       "name": "claude-sonnet-4-5",
       "model": "claude-sonnet-4-5-20250929",
       "prompt": "Standard",
       "max_tokens": 16384,
-      "tools": ["fetch", "terminal", "process", "delegate"],
+      "tools": [
+        "fetch",
+        "polymarket",
+        "terminal",
+        "process",
+        "delegate"
+      ],
       "skill_paths": [
         "/workspace/skills/connectome-ontology",
         "/workspace/skills/agent-spawning/claude-code",
         "/workspace/skills/agent-spawning/collaboration",
         "/workspace/skills/agent-spawning/coordination",
-        "/workspace/skills/autoresearch"
+        "/workspace/skills/autoresearch",
+        "/workspace/skills/economic-operations"
       ]
     },
     {
@@ -130,13 +173,20 @@
       "model": "claude-opus-4-5-20251101",
       "prompt": "Standard",
       "max_tokens": 16384,
-      "tools": ["fetch", "terminal", "process", "delegate"],
+      "tools": [
+        "fetch",
+        "polymarket",
+        "terminal",
+        "process",
+        "delegate"
+      ],
       "skill_paths": [
         "/workspace/skills/connectome-ontology",
         "/workspace/skills/agent-spawning/claude-code",
         "/workspace/skills/agent-spawning/collaboration",
         "/workspace/skills/agent-spawning/coordination",
-        "/workspace/skills/autoresearch"
+        "/workspace/skills/autoresearch",
+        "/workspace/skills/economic-operations"
       ]
     },
     {
@@ -144,14 +194,33 @@
       "model": "claude-opus-4-20250514",
       "prompt": "Standard",
       "max_tokens": 1024,
-      "tools": ["fetch"]
+      "tools": [
+        "fetch"
+      ],
+      "skill_paths": [
+        "/workspace/skills/economic-operations"
+      ]
     },
     {
       "name": "claude-haiku-4-5",
       "model": "claude-haiku-4-5-20251001",
       "prompt": "Standard",
-      "max_tokens": 1024,
-      "tools": ["fetch"]
+      "max_tokens": 16384,
+      "tools": [
+        "fetch",
+        "polymarket",
+        "terminal",
+        "process",
+        "delegate"
+      ],
+      "skill_paths": [
+        "/workspace/skills/connectome-ontology",
+        "/workspace/skills/agent-spawning/claude-code",
+        "/workspace/skills/agent-spawning/collaboration",
+        "/workspace/skills/agent-spawning/coordination",
+        "/workspace/skills/autoresearch",
+        "/workspace/skills/economic-operations"
+      ]
     },
     {
       "name": "claude-3-5-sonnet",
@@ -160,7 +229,9 @@
       "max_tokens": 1024,
       "prompt_caching": false,
       "use_api_key": true,
-      "tools": ["fetch"]
+      "tools": [
+        "fetch"
+      ]
     },
     {
       "name": "claude-3-6-sonnet",
@@ -169,21 +240,33 @@
       "max_tokens": 1024,
       "prompt_caching": false,
       "use_api_key": true,
-      "tools": ["fetch"]
+      "tools": [
+        "fetch"
+      ]
     },
     {
       "name": "claude-sonnet-4",
       "model": "claude-sonnet-4-20250514",
       "prompt": "Standard",
       "max_tokens": 1024,
-      "tools": ["fetch"]
+      "tools": [
+        "fetch"
+      ],
+      "skill_paths": [
+        "/workspace/skills/economic-operations"
+      ]
     },
     {
       "name": "claude-opus-4-1",
       "model": "claude-opus-4-1-20250805",
       "prompt": "Standard",
       "max_tokens": 1024,
-      "tools": ["fetch"]
+      "tools": [
+        "fetch"
+      ],
+      "skill_paths": [
+        "/workspace/skills/economic-operations"
+      ]
     },
     {
       "name": "claude-3-5-haiku",
@@ -192,14 +275,18 @@
       "max_tokens": 1024,
       "prompt_caching": false,
       "use_api_key": true,
-      "tools": ["fetch"]
+      "tools": [
+        "fetch"
+      ]
     },
     {
       "name": "claude-3-haiku",
       "model": "claude-3-haiku-20240307",
       "prompt": "Standard",
       "max_tokens": 1024,
-      "tools": ["fetch"]
+      "tools": [
+        "fetch"
+      ]
     },
     {
       "name": "claude-3-7-sonnet",
@@ -208,7 +295,9 @@
       "max_tokens": 1024,
       "prompt_caching": false,
       "use_api_key": true,
-      "tools": ["fetch"]
+      "tools": [
+        "fetch"
+      ]
     }
   ],
   "max_conversation_frames": 500,

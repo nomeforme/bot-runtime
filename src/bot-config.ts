@@ -7,6 +7,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import type { MCPServerConfig } from '@connectome/grpc-common';
 
 // ---------------------------------------------------------------------------
@@ -86,6 +87,25 @@ export interface ComputeHost {
 }
 
 // ---------------------------------------------------------------------------
+// Wallet config
+// ---------------------------------------------------------------------------
+
+/** Configuration for a single blockchain network */
+export interface WalletChainConfig {
+  chain: 'evm' | 'solana';
+  network: string;          // "base", "solana-mainnet", etc.
+  rpc_url: string;
+  chain_id?: number;        // EVM only
+}
+
+/** Wallet configuration — chains + credential references */
+export interface WalletConfig {
+  chains: WalletChainConfig[];
+  evm_private_key?: string;
+  solana_private_key?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Config types
 // ---------------------------------------------------------------------------
 
@@ -137,6 +157,9 @@ export interface BotRuntimeConfig {
 
   // Axon bindings — advertise credentials to axons
   axon_bindings?: AxonBindingConfig[];
+
+  // Wallet — on-chain capabilities (keys from Docker secrets or env)
+  wallet?: WalletConfig;
 
   // Compute hosts — remote machines reachable via SSH (from COMPUTE_HOSTS env)
   compute_hosts?: ComputeHost[];
@@ -242,7 +265,115 @@ export function loadBotConfig(
     max_bot_mentions_per_conversation: registry.max_bot_mentions_per_conversation,
     axon_bindings: buildAxonBindings(env),
     compute_hosts: buildComputeHosts(env),
+    wallet: buildWalletConfig(env),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Secret encryption (AES-256-GCM + scrypt, zero external deps)
+// ---------------------------------------------------------------------------
+
+const ENC_SALT_LEN = 32;
+const ENC_IV_LEN = 16;
+const ENC_TAG_LEN = 16;
+const ENC_SCRYPT_N = 16384; // 2^14 — strong KDF, ~32MB memory
+const ENC_KEY_LEN = 32;
+/** Required prefix on encrypted wallet secrets */
+const ENC_MAGIC = 'enc:';
+
+function decryptSecret(blob: string, masterKey: string): string {
+  const combined = Buffer.from(blob.slice(ENC_MAGIC.length), 'base64');
+  if (combined.length < ENC_SALT_LEN + ENC_IV_LEN + ENC_TAG_LEN + 1) {
+    throw new Error('Encrypted secret too short — corrupted or wrong format');
+  }
+  const salt = combined.subarray(0, ENC_SALT_LEN);
+  const iv = combined.subarray(ENC_SALT_LEN, ENC_SALT_LEN + ENC_IV_LEN);
+  const tag = combined.subarray(ENC_SALT_LEN + ENC_IV_LEN, ENC_SALT_LEN + ENC_IV_LEN + ENC_TAG_LEN);
+  const ciphertext = combined.subarray(ENC_SALT_LEN + ENC_IV_LEN + ENC_TAG_LEN);
+
+  const key = crypto.scryptSync(masterKey, salt, ENC_KEY_LEN, {
+    N: ENC_SCRYPT_N, r: 8, p: 1,
+  });
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+  decipher.setAuthTag(tag);
+  return decipher.update(ciphertext, undefined, 'utf8') + decipher.final('utf8');
+}
+
+/**
+ * Read an encrypted wallet secret from Docker secrets file or env var fallback.
+ * Wallet keys MUST be encrypted (prefixed with "enc:"). Plaintext wallet keys
+ * are rejected — use scripts/encrypt-secret.ts to encrypt them first.
+ */
+function readSecret(name: string, env: NodeJS.ProcessEnv): string | undefined {
+  let raw: string | undefined;
+
+  // Docker secrets: /run/secrets/<name>
+  try { raw = fs.readFileSync(`/run/secrets/${name}`, 'utf8').trim(); } catch {}
+  // Fallback to env var
+  if (!raw) raw = env[name.toUpperCase()];
+  if (!raw) return undefined;
+
+  if (!raw.startsWith(ENC_MAGIC)) {
+    throw new Error(
+      `Secret "${name}" is plaintext — wallet keys must be encrypted at rest. ` +
+      `Run: ./scripts/setup-wallet.sh --bot <name> to generate an encrypted wallet.`,
+    );
+  }
+
+  const masterKey = readMasterKey(env);
+  if (!masterKey) {
+    throw new Error(
+      `Secret "${name}" is encrypted but master key file not found. ` +
+      `Mount secrets/wallet_master_key at /workspace/secrets/wallet_master_key or /run/secrets/wallet_master_key`,
+    );
+  }
+  return decryptSecret(raw, masterKey);
+}
+
+/**
+ * Read the master key from a file — NEVER from env vars.
+ * The master key must not be in the process environment where
+ * agent tools (terminal, process) could read it via `env` or `printenv`.
+ *
+ * Searched paths (first match wins):
+ *   1. /run/secrets/wallet_master_key  (Docker secret)
+ *   2. /workspace/secrets/wallet_master_key  (bind-mounted file)
+ */
+function readMasterKey(_env: NodeJS.ProcessEnv): string | undefined {
+  const paths = [
+    '/run/secrets/wallet_master_key',
+    '/workspace/secrets/wallet_master_key',
+  ];
+  for (const p of paths) {
+    try { return fs.readFileSync(p, 'utf8').trim(); } catch {}
+  }
+  return undefined;
+}
+
+/**
+ * Build wallet config from secrets + WALLET_CHAINS env var.
+ * Format: WALLET_CHAINS=evm|base|https://mainnet.base.org|8453,solana|mainnet|https://api.mainnet-beta.solana.com
+ */
+function buildWalletConfig(env: NodeJS.ProcessEnv): WalletConfig | undefined {
+  const evmKey = readSecret('evm_private_key', env);
+  const solKey = readSecret('solana_private_key', env);
+  if (!evmKey && !solKey) return undefined;
+
+  const chains: WalletChainConfig[] = [];
+  const chainsStr = env.WALLET_CHAINS || '';
+  for (const entry of chainsStr.split(',').filter(Boolean)) {
+    const [chain, network, rpc_url, chainIdStr] = entry.trim().split('|');
+    if (chain && network && rpc_url) {
+      chains.push({
+        chain: chain as 'evm' | 'solana',
+        network,
+        rpc_url,
+        chain_id: chainIdStr ? parseInt(chainIdStr) : undefined,
+      });
+    }
+  }
+
+  return { chains, evm_private_key: evmKey, solana_private_key: solKey };
 }
 
 /**

@@ -34,6 +34,7 @@ import { createEnlistTool, type EnlistToolContext } from './tools/enlist-tool.js
 import { createContinueSubstreamTool, createContinueSubstreamContext, type ContinueSubstreamContext } from './tools/continue-substream-tool.js';
 import { createEnterSubstreamTool, createExitSubstreamTool, createSetAutotriggerTool, type SubstreamToolContext } from './tools/substream-tool.js';
 import { createInitExperimentTool, createRunExperimentTool, createLogExperimentTool, createExperimentDashboardTool, type ExperimentToolContext } from './tools/experiment-tool.js';
+import { createGetWalletInfoTool, createCheckBalanceTool, createTransferTool, createX402FetchTool, type WalletToolContext } from './tools/wallet-tool.js';
 
 export class BotRuntime {
   private config: BotRuntimeConfig;
@@ -60,6 +61,8 @@ export class BotRuntime {
   private continueSubstreamCtx: ContinueSubstreamContext = createContinueSubstreamContext();
   /** Mutable context shared with experiment tools — updated per activation */
   private experimentToolCtx: ExperimentToolContext = {};
+  /** Wallet tool context — initialized at startup if wallet config present */
+  private walletToolCtx?: WalletToolContext;
 
   /** Active substream — bot's activations redirect here */
   private activeSubstream?: {
@@ -132,7 +135,12 @@ export class BotRuntime {
     }
     console.log(`[BotRuntime:${this.config.name}] Agent registered: ${regResult.agentId}`);
 
-    // 3. Connect MCP servers (if configured)
+    // 3. Initialize wallet (if configured)
+    if (this.config.wallet) {
+      await this.initWallet();
+    }
+
+    // 4. Connect MCP servers + build tools
     const toolHandlers = await this.initTools();
 
     // 4. Resolve model and create ConnectomeAgent
@@ -614,6 +622,11 @@ export class BotRuntime {
     this.streamToolCtx.grpcClient = this.grpcClient;
     (this.streamToolCtx as any).agentName = this.config.name;
 
+    // Update wallet tool context for this activation
+    if (this.walletToolCtx) {
+      this.walletToolCtx.streamId = streamId;
+    }
+
     // Update experiment tool context for this activation
     this.experimentToolCtx.agentName = this.config.name;
     this.experimentToolCtx.agentId = this.agentId;
@@ -977,6 +990,55 @@ export class BotRuntime {
   }
 
   /** Initialize tools from config: tool_configs (cli/http) + MCP servers */
+  private async initWallet(): Promise<void> {
+    const wallet = this.config.wallet!;
+    const { createPublicClient, http } = await import('viem');
+    const { privateKeyToAccount } = await import('viem/accounts');
+
+    const evmClients = new Map<string, import('viem').PublicClient>();
+    const solanaConnections = new Map<string, import('@solana/web3.js').Connection>();
+
+    for (const chain of wallet.chains) {
+      if (chain.chain === 'evm') {
+        evmClients.set(chain.network, createPublicClient({ transport: http(chain.rpc_url) }));
+      } else if (chain.chain === 'solana') {
+        const { Connection } = await import('@solana/web3.js');
+        solanaConnections.set(chain.network, new Connection(chain.rpc_url));
+      }
+    }
+
+    let evmAccount: import('viem/accounts').PrivateKeyAccount | undefined;
+    if (wallet.evm_private_key) {
+      evmAccount = privateKeyToAccount(wallet.evm_private_key as `0x${string}`);
+      console.log(`[BotRuntime:${this.config.name}] EVM wallet: ${evmAccount.address}`);
+    }
+
+    let solanaKeypair: import('@solana/web3.js').Keypair | undefined;
+    if (wallet.solana_private_key) {
+      const { Keypair } = await import('@solana/web3.js');
+      // Support JSON byte array (Solana CLI default) or raw base64/hex
+      const keyStr = wallet.solana_private_key.trim();
+      let secretKey: Uint8Array;
+      if (keyStr.startsWith('[')) {
+        // JSON byte array: [1,2,3,...]
+        secretKey = Uint8Array.from(JSON.parse(keyStr));
+      } else {
+        // Base64-encoded secret key
+        secretKey = Uint8Array.from(Buffer.from(keyStr, 'base64'));
+      }
+      solanaKeypair = Keypair.fromSecretKey(secretKey);
+      console.log(`[BotRuntime:${this.config.name}] Solana wallet: ${solanaKeypair.publicKey.toBase58()}`);
+    }
+
+    this.walletToolCtx = {
+      evmAccount,
+      evmClients,
+      solanaKeypair,
+      solanaConnections,
+      chains: wallet.chains,
+    };
+  }
+
   private async initTools(): Promise<ToolHandler[]> {
     const toolHandlers: ToolHandler[] = [];
     const requestedTools = this.config.tools ?? [];
@@ -1073,6 +1135,15 @@ export class BotRuntime {
       toolHandlers.push(createExperimentDashboardTool(this.experimentToolCtx));
 
       console.log(`[BotRuntime:${this.config.name}] stream awareness + enlist + substream + continue_substream + experiment tools enabled`);
+
+      // Wallet tools (only if wallet is configured)
+      if (this.walletToolCtx) {
+        toolHandlers.push(createGetWalletInfoTool(this.walletToolCtx));
+        toolHandlers.push(createCheckBalanceTool(this.walletToolCtx));
+        toolHandlers.push(createTransferTool(this.walletToolCtx));
+        toolHandlers.push(createX402FetchTool(this.walletToolCtx));
+        console.log(`[BotRuntime:${this.config.name}] Wallet tools enabled (${this.walletToolCtx.chains.length} chain(s))`);
+      }
     }
 
     return toolHandlers;

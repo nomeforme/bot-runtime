@@ -21,7 +21,12 @@
     "@connectome/agent-core": "workspace:*",
     "@connectome/grpc-common": "workspace:*",
     "@connectome/axon-binding": "workspace:*",
-    "node-pty": "^1.0.0"
+    "node-pty": "^1.0.0",
+    "viem": "^2.44.2",
+    "@solana/web3.js": "^1.98.0",
+    "@x402/core": "^2.6.0",
+    "@x402/evm": "^2.6.0",
+    "@x402/svm": "^2.6.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
