@@ -82,6 +82,9 @@ export class BotRuntime {
   /** Stream ID of last completed activation — for tool-initiated stream entry */
   private lastActivationStreamId?: string;
 
+  /** Set by onError callback when the failure is a retryable API error */
+  private lastCycleApiError = false;
+
   constructor(config: BotRuntimeConfig) {
     this.config = config;
     this.agentId = config.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
@@ -174,6 +177,9 @@ export class BotRuntime {
         console.error(
           `[BotRuntime:${this.config.name}] Cycle error on ${activation.streamId}: ${error.message}`,
         );
+        // Flag retryable API errors (overloaded, internal server error)
+        const msg = error.message || '';
+        this.lastCycleApiError = msg.includes('api_error') || msg.includes('overloaded_error');
       },
       drainAttachments: () => {
         const atts = this.terminalVeilCtx.pendingAttachments || [];
@@ -442,13 +448,20 @@ export class BotRuntime {
         }
 
         // Also emit steer message to active substream so participants
-        // see it in their context on the next cycle
+        // see it in their context on the next cycle.
+        // Use discord:message event type so attachments are included in context.
         if (this.activeSubstream) {
-          this.grpcClient.emitEvent('agent:speech', {
-            agentName: 'system',
-            agentId: 'system',
+          const steerAttachments = state.attachments;
+          this.grpcClient.emitEvent('discord:message', {
             content: `[!steer] ${message}`,
+            authorName: 'user',
+            authorId: 'steer',
+            channelId: '',
+            messageId: `steer-${Date.now()}`,
+            timestamp: Date.now(),
             streamId: this.activeSubstream.substreamId,
+            streamType: 'discord',
+            ...(steerAttachments?.length ? { attachments: steerAttachments } : {}),
           }).catch(() => {});
         }
         break;
@@ -533,15 +546,26 @@ export class BotRuntime {
 
       console.log(`${prefix} Redirecting activation from ${streamId} → ${this.activeSubstream.substreamId}`);
 
-      // Relay user message as agent:speech on the substream so it appears in context
+      // Relay user message to the substream so it appears in context.
+      // Emit as a proper message event (not speech) so attachments are included.
+      // Attachments arrive as JSON string (gRPC metadata is map<string, string>).
       const relayAndActivate = async () => {
-        if (messageContent) {
-          await this.grpcClient.emitEvent('agent:speech', {
-            agentName: authorName,
-            agentId: 'relay',
-            content: messageContent,
+        let attachments: any[] | undefined;
+        if (state.metadata?.attachmentsJson) {
+          try { attachments = JSON.parse(state.metadata.attachmentsJson); } catch {}
+        }
+        if (messageContent || attachments?.length) {
+          await this.grpcClient.emitEvent('discord:message', {
+            content: messageContent || '',
+            authorName,
+            authorId: state.metadata?.authorId || 'relay',
+            channelId: state.metadata?.channelId || '',
+            messageId: state.metadata?.messageId || `relay-${Date.now()}`,
+            timestamp: Number(state.metadata?.timestamp) || Date.now(),
             streamId: this.activeSubstream!.substreamId,
+            streamType: state.metadata?.streamType || 'discord',
             sourceStreamId: streamId,
+            attachments,
           });
         }
 
@@ -603,9 +627,22 @@ export class BotRuntime {
     this.continueSubstreamCtx.isSubstreamActive =
       !!this.activeSubstream || (!!this.autotriggerState?.enabled);
 
+    // Reset API error flag before each cycle
+    this.lastCycleApiError = false;
+
     this.effector.handleActivation(activation).then((result) => {
       // Signal cycle completion so axon can clear typing indicator
       this.emitTypingStop(streamId);
+
+      // API error with autotrigger active: retry with exponential backoff
+      // instead of letting endAutotriggerNaturally kill the loop
+      if (!result && this.lastCycleApiError && this.autotriggerState?.enabled) {
+        const at = this.autotriggerState;
+        at.delayMs = Math.min(at.delayMs * BotRuntime.AUTOTRIGGER_BACKOFF, BotRuntime.AUTOTRIGGER_MAX_DELAY);
+        console.log(`${prefix} API error during autotrigger — retrying in ${at.delayMs}ms (cycle #${at.cycleCount})`);
+        this.scheduleAutotrigger(streamId);
+        return;
+      }
 
       // Track whether this cycle used substantive tools (for collapse detection)
       // Exclude continue_substream itself — it's a control signal, not work
@@ -632,6 +669,14 @@ export class BotRuntime {
     }).catch((err) => {
       console.error(`${prefix} Activation error on ${streamId}: ${err.message}`);
       this.emitTypingStop(streamId);
+
+      // Even for uncaught errors, keep autotrigger alive with backoff
+      if (this.autotriggerState?.enabled) {
+        const at = this.autotriggerState;
+        at.delayMs = Math.min(at.delayMs * BotRuntime.AUTOTRIGGER_BACKOFF, BotRuntime.AUTOTRIGGER_MAX_DELAY);
+        console.log(`${prefix} Uncaught error during autotrigger — retrying in ${at.delayMs}ms`);
+        this.scheduleAutotrigger(streamId);
+      }
     });
   }
 
@@ -644,10 +689,11 @@ export class BotRuntime {
 
   /** Default autotrigger delay between cycles (ms) */
   private static readonly AUTOTRIGGER_DEFAULT_DELAY = 2000;
-  /** Max autotrigger delay after backoff (ms) */
-  private static readonly AUTOTRIGGER_MAX_DELAY = 30000;
-  /** Backoff multiplier on error */
-  private static readonly AUTOTRIGGER_BACKOFF = 1.5;
+  /** Max autotrigger delay after backoff (ms) — 5 minutes ceiling keeps
+   *  retry rate at ~12/hour during sustained outages */
+  private static readonly AUTOTRIGGER_MAX_DELAY = 300_000;
+  /** Backoff multiplier on error — 2s → 4s → 8s → 16s → 32s → 64s → 128s → 256s → 300s cap */
+  private static readonly AUTOTRIGGER_BACKOFF = 2;
 
   /**
    * Track whether an autotrigger cycle used tools. If too many consecutive
