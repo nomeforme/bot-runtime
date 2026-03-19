@@ -18,6 +18,16 @@
       }
     },
     {
+      "name": "kohya-lora-training",
+      "transport": "streamable-http",
+      "url": "${KOHYA_MCP_URL}"
+    },
+    {
+      "name": "connectome",
+      "transport": "streamable-http",
+      "url": "http://connectome-mcp:3100/mcp"
+    },
+    {
       "name": "glitchtip",
       "transport": "stdio",
       "command": "npx",
@@ -86,6 +96,7 @@
       "model": "claude-opus-4-6",
       "prompt": "Standard",
       "max_tokens": 16384,
+      "mcp": ["kohya-lora-training", "connectome"],
       "tools": [
         "fetch",
         "polymarket",
@@ -173,6 +184,7 @@
       "model": "claude-opus-4-5-20251101",
       "prompt": "Standard",
       "max_tokens": 16384,
+      "mcp": ["kohya-lora-training"],
       "tools": [
         "fetch",
         "polymarket",
