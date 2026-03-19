@@ -164,6 +164,12 @@ export interface BotRuntimeConfig {
   // Compute hosts — remote machines reachable via SSH (from COMPUTE_HOSTS env)
   compute_hosts?: ComputeHost[];
 
+  // Credential isolation — API key read from Docker secret, not env var
+  anthropic_api_key?: string;
+
+  // gRPC mTLS configuration
+  tls?: { caCertPath?: string; certPath?: string; keyPath?: string };
+
   // Runtime settings
   max_conversation_frames?: number;
   max_message_length?: number;
@@ -242,6 +248,12 @@ export function loadBotConfig(
   const [host, portStr] = grpcHostEnv.split(':');
   const port = parseInt(portStr) || 50051;
 
+  // Read API key from Docker secret first, fall back to env var
+  const anthropicApiKey = readPlaintextSecret('anthropic_api_key', env);
+
+  // Build TLS config from env vars
+  const tls = buildTlsConfig(env);
+
   return {
     name: botEntry.name,
     model: botEntry.model || 'claude-sonnet-4-20250514',
@@ -266,6 +278,8 @@ export function loadBotConfig(
     axon_bindings: buildAxonBindings(env),
     compute_hosts: buildComputeHosts(env),
     wallet: buildWalletConfig(env),
+    anthropic_api_key: anthropicApiKey,
+    tls,
   };
 }
 
@@ -297,6 +311,21 @@ function decryptSecret(blob: string, masterKey: string): string {
   const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
   decipher.setAuthTag(tag);
   return decipher.update(ciphertext, undefined, 'utf8') + decipher.final('utf8');
+}
+
+/**
+ * Read a plaintext secret from Docker secrets file or env var fallback.
+ * Docker secrets (/run/secrets/) are preferred because they don't appear
+ * in process.env, /proc/<pid>/environ, or docker inspect.
+ */
+function readPlaintextSecret(name: string, env: NodeJS.ProcessEnv): string | undefined {
+  // Docker secrets: /run/secrets/<name>
+  try {
+    const val = fs.readFileSync(`/run/secrets/${name}`, 'utf8').trim();
+    if (val) return val;
+  } catch {}
+  // Fallback to env var (dev/local)
+  return env[name.toUpperCase()] || undefined;
 }
 
 /**
@@ -374,6 +403,19 @@ function buildWalletConfig(env: NodeJS.ProcessEnv): WalletConfig | undefined {
   }
 
   return { chains, evm_private_key: evmKey, solana_private_key: solKey };
+}
+
+/**
+ * Build TLS config from env vars.
+ * GRPC_TLS=true enables mTLS. Cert paths default to /workspace/certs/.
+ */
+function buildTlsConfig(env: NodeJS.ProcessEnv): { caCertPath: string; certPath: string; keyPath: string } | undefined {
+  if (env.GRPC_TLS !== 'true') return undefined;
+  return {
+    caCertPath: env.GRPC_CA_CERT || '/workspace/certs/ca.crt',
+    certPath: env.GRPC_CERT || '/workspace/certs/bot-runtime.crt',
+    keyPath: env.GRPC_KEY || '/workspace/certs/bot-runtime.key',
+  };
 }
 
 /**

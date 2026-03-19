@@ -73,7 +73,7 @@ export function createTerminalTool(
       host: {
         type: 'string',
         description: computeHosts.length > 0
-          ? `Remote machine to execute on via SSH. Available: ${computeHosts.map((h) => `${h.name} [${h.capabilities?.join(', ') || 'general'}] (workspace: ${h.workspaceDir || `/home/${h.user}/workspace`})`).join('; ')}. Local workspace is /workspace/shared/. Omit for local execution.`
+          ? `Remote machine to execute on via SSH. IMPORTANT: You MUST use this parameter to run commands on remote hosts — do NOT use raw "ssh" commands, because Tailscale DNS hostnames cannot be resolved from inside this container. The host parameter handles SSH routing automatically. Available: ${computeHosts.map((h) => `${h.name} [${h.capabilities?.join(', ') || 'general'}] (workspace: ${h.workspaceDir || `/home/${h.user}/workspace`})`).join('; ')}. Local workspace is /workspace/shared/. Omit for local execution.`
           : 'Remote machine name to execute on via SSH (if configured). Omit for local execution.',
       },
       push: {

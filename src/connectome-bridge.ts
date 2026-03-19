@@ -76,8 +76,10 @@ export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
       // Log conversation history (last 10 messages)
       this.logConversationData(messages, streamId);
 
-      // Convert to pi-agent AgentContext
-      return renderedContextToAgentContext({ messages });
+      // Convert to pi-agent AgentContext, preserving raw unmerged messages for prefill
+      const context = renderedContextToAgentContext({ messages });
+      context.rawMessages = messages.filter(m => m.role !== 'system');
+      return context;
     } catch (error: any) {
       console.warn(`[ConnectomeBridge:${this.agentName}] Context fetch failed: ${error.message}`);
       // Return fallback context with just the system prompt
