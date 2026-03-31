@@ -199,7 +199,8 @@ To mention users or other bots, use @username syntax (e.g. @claude-opus-4-5). Th
     const prefix = `[ConnectomeBridge:${this.agentName}]`;
     console.log(`${prefix} ╔══════════════════════════════════════`);
     console.log(`${prefix} ║ Stream: ${streamId}`);
-    console.log(`${prefix} ║ Total messages: ${messages.length} (showing last 10)`);
+    const showCount = Math.min(messages.length, 10);
+    console.log(`${prefix} ║ Total messages: ${messages.length} (showing last ${showCount})`);
 
     const startIndex = Math.max(0, messages.length - 10);
     if (startIndex > 0) {
