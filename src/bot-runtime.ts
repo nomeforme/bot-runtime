@@ -35,6 +35,7 @@ import { createContinueSubstreamTool, createContinueSubstreamContext, type Conti
 import { createEnterSubstreamTool, createExitSubstreamTool, createSetAutotriggerTool, type SubstreamToolContext } from './tools/substream-tool.js';
 import { createInitExperimentTool, createRunExperimentTool, createLogExperimentTool, createExperimentDashboardTool, type ExperimentToolContext } from './tools/experiment-tool.js';
 import { createGetWalletInfoTool, createCheckBalanceTool, createTransferTool, createX402FetchTool, type WalletToolContext } from './tools/wallet-tool.js';
+import { createInjectSecretTool } from './tools/inject-secret-tool.js';
 
 export class BotRuntime {
   private config: BotRuntimeConfig;
@@ -1173,6 +1174,13 @@ export class BotRuntime {
         toolHandlers.push(createTransferTool(this.walletToolCtx));
         toolHandlers.push(createX402FetchTool(this.walletToolCtx));
         console.log(`[BotRuntime:${this.config.name}] Wallet tools enabled (${this.walletToolCtx.chains.length} chain(s))`);
+      }
+
+      // inject_secret tool (only if compute hosts are configured)
+      const hosts = this.config.compute_hosts || [];
+      if (hosts.length > 0) {
+        toolHandlers.push(createInjectSecretTool(hosts));
+        console.log(`[BotRuntime:${this.config.name}] inject_secret tool enabled (${hosts.length} host(s))`);
       }
     }
 
