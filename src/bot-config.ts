@@ -144,6 +144,8 @@ export interface BotRuntimeConfig {
   prompt_caching?: boolean;
   /** Force API key auth instead of OAuth (for models not on Claude subscription) */
   use_api_key?: boolean;
+  /** AWS region override for Bedrock models (e.g. "ap-south-1" for models not served in us-east-1) */
+  aws_region?: string;
   /** MCP server names this bot should use */
   mcp?: string[];
   /** Global MCP server configurations */
@@ -199,6 +201,7 @@ interface V1BotEntry {
   mcp?: string[];
   prompt_caching?: boolean;
   use_api_key?: boolean;
+  aws_region?: string;
   guild_id?: string | null;
   auto_join_channels?: string[];
   skill_paths?: string[];
@@ -266,6 +269,7 @@ export function loadBotConfig(
     rlm: botEntry.rlm,
     prompt_caching: botEntry.prompt_caching,
     use_api_key: botEntry.use_api_key,
+    aws_region: botEntry.aws_region,
     mcp: botEntry.mcp,
     mcp_servers: registry.mcp_servers,
     tool_configs: registry.tool_configs,

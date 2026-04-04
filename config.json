@@ -236,22 +236,24 @@
     },
     {
       "name": "claude-3-5-sonnet",
-      "model": "us.anthropic.claude-3-5-sonnet-20240620-v1:0",
+      "model": "apac.anthropic.claude-3-5-sonnet-20240620-v1:0",
       "prompt": "Standard",
       "max_tokens": 1024,
       "prompt_caching": false,
       "use_api_key": true,
+      "aws_region": "ap-southeast-1",
       "tools": [
         "fetch"
       ]
     },
     {
       "name": "claude-3-6-sonnet",
-      "model": "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+      "model": "apac.anthropic.claude-3-5-sonnet-20241022-v2:0",
       "prompt": "Standard",
       "max_tokens": 1024,
       "prompt_caching": false,
       "use_api_key": true,
+      "aws_region": "ap-southeast-1",
       "tools": [
         "fetch"
       ]
