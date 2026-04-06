@@ -450,6 +450,14 @@ function buildAxonBindings(env: NodeJS.ProcessEnv): AxonBindingConfig[] {
     });
   }
 
+  if (env.WEB_AXON_HOST) {
+    bindings.push({
+      platform: 'web',
+      axon_host: env.WEB_AXON_HOST,
+      credentials: {},
+    });
+  }
+
   if (env.WHATSAPP_PHONE && env.WHATSAPP_AXON_HOST) {
     bindings.push({
       platform: 'whatsapp',
