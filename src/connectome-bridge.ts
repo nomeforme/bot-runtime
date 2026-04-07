@@ -154,8 +154,21 @@ To mention users or other bots, use @username syntax (e.g. @claude-opus-4-5). Th
       metadata?: { attachments?: any[] };
     }> = [];
 
-    // Add system prompt
-    const systemContent = this.buildSystemPrompt();
+    // Add system prompt, enriched with ambient facets from server state
+    let systemContent = this.buildSystemPrompt();
+
+    // Append ambient facets (server already filters by agent and stream)
+    if (serverContext?.state && typeof serverContext.state === 'object') {
+      const ambientParts: string[] = [];
+      for (const [, facet] of Object.entries(serverContext.state) as [string, any][]) {
+        if (facet.type !== 'ambient' || !facet.content) continue;
+        ambientParts.push(facet.content);
+      }
+      if (ambientParts.length > 0) {
+        systemContent += '\n\n## Current Context\n' + ambientParts.join('\n');
+      }
+    }
+
     if (systemContent) {
       messages.push({ role: 'system', content: systemContent });
     }
