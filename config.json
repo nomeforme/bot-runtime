@@ -312,6 +312,33 @@
       "tools": [
         "fetch"
       ]
+    },
+    {
+      "name": "claude-opus-4-7",
+      "model": "claude-opus-4-7",
+      "prompt": "Standard",
+      "max_tokens": 16384,
+      "mcp": ["kohya-lora-training", "connectome"],
+      "tools": [
+        "fetch",
+        "polymarket",
+        "terminal",
+        "process",
+        "delegate"
+      ],
+      "skill_paths": [
+        "/workspace/skills/connectome-ontology",
+        "/workspace/skills/agent-spawning/claude-code",
+        "/workspace/skills/agent-spawning/collaboration",
+        "/workspace/skills/agent-spawning/coordination",
+        "/workspace/skills/autoresearch",
+        "/workspace/skills/economic-operations"
+      ],
+      "rlm": {
+        "maxDepth": 2,
+        "maxCalls": 10,
+        "timeoutSeconds": 300
+      }
     }
   ],
   "max_conversation_frames": 500,
