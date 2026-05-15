@@ -238,6 +238,11 @@ export class BotRuntime {
       await this.mcpManager.disconnectAll();
     }
 
+    // Tear down per-stream pi-agent pool (abort in-flight + clear sweep timer)
+    if (this.agent) {
+      this.agent.dispose();
+    }
+
     // Disconnect from Connectome
     this.grpcClient.disconnect();
 
