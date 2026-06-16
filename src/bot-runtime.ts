@@ -529,7 +529,7 @@ export class BotRuntime {
   /**
    * Build UnifiedActivation from paired facets and dispatch to the effector.
    */
-  private fireActivation(activationFacet: any, _contextFacet: any): void {
+  private fireActivation(activationFacet: any, contextFacet: any): void {
     if (!this.effector) return;
 
     const streamId = activationFacet.streamId;
@@ -539,6 +539,19 @@ export class BotRuntime {
     const targetBot = state.metadata?.targetBot;
     if (targetBot && targetBot !== this.config.name) {
       return;
+    }
+
+    // Prime the bridge's pre-rendered context cache so the upcoming effector
+    // cycle's getContext() call uses the inline context the server already
+    // rendered (at maxFrames=100), skipping a redundant GetContext gRPC call.
+    // On heavy streams (1k+ facets) this is the difference between a 70s
+    // cycle (with retries) and a 5s cycle.
+    if (contextFacet?.state?.context && this.bridge) {
+      this.bridge.setPreRenderedContext(
+        streamId,
+        contextFacet.state.context,
+        contextFacet.state.tokenCount ?? 0,
+      );
     }
 
     const prefix = `[BotRuntime:${this.config.name}]`;

@@ -37,6 +37,23 @@ export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
   private skipIdentityPrompt: boolean;
   private veilCtx?: TerminalVeilContext;
 
+  /**
+   * Per-stream cache of pre-rendered contexts delivered alongside an activation.
+   *
+   * When the server's `ActivateAgent` handler fires, it inlines a rendered
+   * context (at maxFrames=100) into a `rendered-context` facet. The bot
+   * receives this via its activation-event subscription. Stashing the context
+   * here lets the next `getContext(streamId)` call use it directly — avoiding
+   * a redundant gRPC `GetContext` roundtrip that would otherwise re-fetch
+   * (typically at maxFrames=500) and risk blowing the gRPC frame limit on
+   * heavy streams.
+   *
+   * Keyed by streamId. One-shot: consumed and deleted on first read. TTL is
+   * a safety net for activations that never run their effector.
+   */
+  private preRendered = new Map<string, { context: any; tokenCount: number; expiresAt: number }>();
+  private static readonly PRE_RENDERED_TTL_MS = 30_000;
+
   constructor(config: ConnectomeBridgeConfig) {
     this.client = config.client;
     this.agentName = config.agentName;
@@ -44,6 +61,21 @@ export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
     this.systemPrompt = config.systemPrompt;
     this.skipIdentityPrompt = config.skipIdentityPrompt ?? false;
     this.veilCtx = config.veilCtx;
+  }
+
+  /**
+   * Prime the per-stream pre-rendered context cache. Call this right before
+   * dispatching an activation to the effector when a `rendered-context` facet
+   * was paired with the `agent-activation`. The next `getContext(streamId)`
+   * call will consume it instead of going over gRPC.
+   */
+  setPreRenderedContext(streamId: string, context: any, tokenCount = 0): void {
+    if (!context) return;
+    this.preRendered.set(streamId, {
+      context,
+      tokenCount,
+      expiresAt: Date.now() + ConnectomeBridge.PRE_RENDERED_TTL_MS,
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -54,6 +86,26 @@ export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
     streamId: string,
     options?: { maxFrames?: number },
   ): Promise<AgentContext> {
+    // Fast path: consume pre-rendered context if the server attached one
+    // alongside this activation. Avoids a redundant GetContext gRPC call,
+    // which on heavy streams (1k+ facets) can blow the gRPC frame limit and
+    // deadline-expire even when bounded by maxFrames.
+    const cached = this.preRendered.get(streamId);
+    if (cached && cached.expiresAt > Date.now()) {
+      this.preRendered.delete(streamId);
+      console.log(`[ConnectomeBridge:${this.agentName}] Using pre-rendered context for ${streamId} (${cached.tokenCount} tokens, no gRPC fetch)`);
+      const messages = this.transformToMessages(cached.context);
+      if (this.veilCtx) {
+        this.veilCtx.incomingAttachments = this.extractIncomingAttachments(messages);
+      }
+      this.logConversationData(messages, streamId);
+      const context = renderedContextToAgentContext({ messages });
+      context.rawMessages = messages.filter(m => m.role !== 'system');
+      return context;
+    }
+    // Drop stale entry if expired
+    if (cached) this.preRendered.delete(streamId);
+
     console.log(`[ConnectomeBridge:${this.agentName}] Fetching context for stream ${streamId} (maxFrames=${options?.maxFrames ?? 500})`);
 
     try {
