@@ -304,11 +304,12 @@
     },
     {
       "name": "claude-3-7-sonnet",
-      "model": "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+      "model": "anthropic.claude-3-7-sonnet-20250219-v1:0",
       "prompt": "Standard",
       "max_tokens": 1024,
       "prompt_caching": false,
       "use_api_key": true,
+      "aws_region": "eu-west-2",
       "tools": [
         "fetch"
       ]
