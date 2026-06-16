@@ -203,9 +203,13 @@
     },
     {
       "name": "claude-opus-4",
-      "model": "claude-opus-4-20250514",
+      "model": "anthropic/claude-opus-4",
       "prompt": "Standard",
       "max_tokens": 1024,
+      "use_api_key": true,
+      "prompt_caching": false,
+      "gateway": "vercel",
+      "gateway_only": ["vertex"],
       "tools": [
         "fetch"
       ],

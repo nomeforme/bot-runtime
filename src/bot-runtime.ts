@@ -18,6 +18,7 @@ import {
   ConnectomeAgent,
   ConnectomeEffector,
   resolveModel,
+  resolveGatewayModel,
 } from '@connectome/agent-core';
 import type { ToolHandler, UnifiedActivation } from '@connectome/agent-core';
 import type { BotRuntimeConfig, ToolConfig, CliToolConfig, HttpToolConfig, TerminalToolConfig } from './bot-config.js';
@@ -143,7 +144,19 @@ export class BotRuntime {
     const toolHandlers = await this.initTools();
 
     // 4. Resolve model and create ConnectomeAgent
-    const model = resolveModel(this.config.model);
+    //
+    // When `gateway` is set, the bot's model is routed through an LLM
+    // aggregator (currently Vercel AI Gateway). `resolveGatewayModel` builds
+    // a Model object pointed at the gateway's OpenAI-compatible endpoint with
+    // upstream provider routing pins (only/order) baked in. Use this for
+    // models whose direct/Bedrock routes are sunset but a Vertex (or other)
+    // upstream still serves — e.g. anthropic/claude-opus-4 via vertex.
+    const model = this.config.gateway === 'vercel'
+      ? resolveGatewayModel(this.config.model, {
+          only: this.config.gateway_only,
+          order: this.config.gateway_order,
+        })
+      : resolveModel(this.config.model);
     if (!model) {
       throw new Error(`Model not found: ${this.config.model}`);
     }

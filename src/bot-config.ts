@@ -146,6 +146,12 @@ export interface BotRuntimeConfig {
   use_api_key?: boolean;
   /** AWS region override for Bedrock models (e.g. "ap-south-1" for models not served in us-east-1) */
   aws_region?: string;
+  /** Route this bot through an LLM aggregator gateway. Currently supported: "vercel". */
+  gateway?: 'vercel';
+  /** Gateway upstream pin — request fails if none of these providers can serve. */
+  gateway_only?: string[];
+  /** Gateway upstream order — try these in order, fall back to defaults if all fail. */
+  gateway_order?: string[];
   /** MCP server names this bot should use */
   mcp?: string[];
   /** Global MCP server configurations */
@@ -202,6 +208,9 @@ interface V1BotEntry {
   prompt_caching?: boolean;
   use_api_key?: boolean;
   aws_region?: string;
+  gateway?: 'vercel';
+  gateway_only?: string[];
+  gateway_order?: string[];
   guild_id?: string | null;
   auto_join_channels?: string[];
   skill_paths?: string[];
@@ -270,6 +279,9 @@ export function loadBotConfig(
     prompt_caching: botEntry.prompt_caching,
     use_api_key: botEntry.use_api_key,
     aws_region: botEntry.aws_region,
+    gateway: botEntry.gateway,
+    gateway_only: botEntry.gateway_only,
+    gateway_order: botEntry.gateway_order,
     mcp: botEntry.mcp,
     mcp_servers: registry.mcp_servers,
     tool_configs: registry.tool_configs,
