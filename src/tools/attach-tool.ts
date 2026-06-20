@@ -1,19 +1,28 @@
 /**
- * attach_file tool — queues a file as a base64 attachment on the activation context.
+ * attach_file tool — uploads a file to the Connectome content-addressed blob
+ * store and queues a sha256 ref on the activation context.
  *
- * The attachment is drained by the effector after the agent cycle completes
- * and sent alongside the bot's speech to Discord/Signal.
+ * The ref is drained by the effector after the agent cycle completes and
+ * embedded in the agent:speech event as `Attachment.blobId`. The matching
+ * platform axon's speech-effector pulls the bytes via GetBlob right before
+ * delivering to Signal/Discord — so the bytes only travel:
+ *   bot → server (PutBlob, this tool)
+ *   server → axon (GetBlob, in the effector)
+ * The pub/sub broadcast carries only the sha256 ref (~64 bytes), never bytes.
+ *
+ * This avoids the gRPC fan-out amplification that previously caused
+ * subscription drops + DEADLINE_EXCEEDED cascades on attachment-heavy cycles.
  */
 
 import fs from 'fs';
 import path from 'path';
-import { generateAttachmentId, getContentTypeFromFilename } from '@connectome/grpc-common';
+import { generateAttachmentId, getContentTypeFromFilename, type ConnectomeClient } from '@connectome/grpc-common';
 import type { ToolHandler } from '@connectome/agent-core';
 import type { TerminalVeilContext } from './terminal-tool.js';
 
 const MAX_ATTACHMENT_SIZE = 8 * 1024 * 1024; // 8MB
 
-export function createAttachTool(veilCtx: TerminalVeilContext): ToolHandler {
+export function createAttachTool(veilCtx: TerminalVeilContext, client: ConnectomeClient): ToolHandler {
   return {
     name: 'attach_file',
     description: 'Attach a file (image, document, etc.) to your next message so it appears in Discord/Signal. You MUST call this after generating any file the user should see — files on disk are invisible to users without this tool. Only files in /workspace/shared/ or /tmp/ can be attached. Max 8MB.',
@@ -39,14 +48,33 @@ export function createAttachTool(veilCtx: TerminalVeilContext): ToolHandler {
       if (stat.size > MAX_ATTACHMENT_SIZE)
         return `Error: File too large (${(stat.size / 1024 / 1024).toFixed(1)}MB, max 8MB)`;
 
-      const data = fs.readFileSync(resolved).toString('base64');
+      const bytes = fs.readFileSync(resolved);
       const filename = input.filename || path.basename(resolved);
+      const contentType = getContentTypeFromFilename(filename);
+
+      // Upload to the blob store. Returns the sha256 content-addressed id.
+      // Idempotent: re-attaching the same bytes is a no-op (alreadyExisted=true).
+      let blobId: string;
+      try {
+        const result = await client.putBlob(new Uint8Array(bytes), {
+          contentType,
+          filename,
+        });
+        blobId = result.blobId;
+        if (result.alreadyExisted) {
+          console.log(`[attach_file] Blob ${blobId.substring(0, 12)}... already in store (dedup hit)`);
+        } else {
+          console.log(`[attach_file] Uploaded blob ${blobId.substring(0, 12)}... (${stat.size} bytes)`);
+        }
+      } catch (err: any) {
+        return `Error: Failed to upload to blob store: ${err.message}`;
+      }
 
       if (!veilCtx.pendingAttachments) veilCtx.pendingAttachments = [];
       veilCtx.pendingAttachments.push({
         id: generateAttachmentId(),
-        contentType: getContentTypeFromFilename(filename),
-        data,
+        blobId,
+        contentType,
         filename,
         sizeBytes: stat.size,
       });

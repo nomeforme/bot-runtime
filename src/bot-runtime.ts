@@ -1137,7 +1137,7 @@ export class BotRuntime {
 
     // Add default tools unless skip_system_prompt is set (bare mode — no tools, no prompt)
     if (!this.config.skip_system_prompt) {
-      toolHandlers.push(createAttachTool(this.terminalVeilCtx));
+      toolHandlers.push(createAttachTool(this.terminalVeilCtx, this.grpcClient));
       toolHandlers.push(createSaveAttachmentTool(this.terminalVeilCtx));
       console.log(`[BotRuntime:${this.config.name}] attach_file + save_attachment tools enabled`);
 

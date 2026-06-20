@@ -30,7 +30,10 @@ export interface TerminalVeilContext {
   pendingAttachments?: Array<{
     id: string;
     contentType: string;
-    data: string;          // base64
+    /** Content-addressed sha256 ref into the blob store (preferred for new attachments). */
+    blobId?: string;
+    /** Legacy: base64-encoded bytes (used only by tests / fallback paths). */
+    data?: string;
     filename: string;
     sizeBytes: number;
   }>;

@@ -10,8 +10,8 @@
  */
 
 import { ConnectomeClient } from '@connectome/grpc-common';
-import { renderedContextToAgentContext } from '@connectome/agent-core';
-import type { ContextProvider, SpeechRecorder, AgentContext } from '@connectome/agent-core';
+import { renderedContextToAgentContext, resolveAttachmentRefs } from '@connectome/agent-core';
+import type { ContextProvider, SpeechRecorder, AgentContext, BlobFetcher } from '@connectome/agent-core';
 import type { TerminalVeilContext } from './tools/terminal-tool.js';
 
 export interface ConnectomeBridgeConfig {
@@ -82,6 +82,19 @@ export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
   // ContextProvider
   // ---------------------------------------------------------------------------
 
+  /**
+   * BlobFetcher bound to this bridge's gRPC client. Used to lazily resolve
+   * Attachment.blobId refs into inline bytes before the LLM call.
+   */
+  private fetchBlob: BlobFetcher = async (blobId: string) => {
+    const result = await this.client.getBlob(blobId);
+    return {
+      bytes: result.bytes,
+      contentType: result.contentType,
+      filename: result.filename,
+    };
+  };
+
   async getContext(
     streamId: string,
     options?: { maxFrames?: number },
@@ -94,7 +107,10 @@ export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
     if (cached && cached.expiresAt > Date.now()) {
       this.preRendered.delete(streamId);
       console.log(`[ConnectomeBridge:${this.agentName}] Using pre-rendered context for ${streamId} (${cached.tokenCount} tokens, no gRPC fetch)`);
-      const messages = this.transformToMessages(cached.context);
+      let messages = this.transformToMessages(cached.context);
+      // Resolve any blob-ref attachments into inline bytes so the LLM (and
+      // save_attachment extraction) see them identically to legacy inline data.
+      messages = await resolveAttachmentRefs(messages, this.fetchBlob);
       if (this.veilCtx) {
         this.veilCtx.incomingAttachments = this.extractIncomingAttachments(messages);
       }
@@ -118,7 +134,10 @@ export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
       const serverContext = result.context as any;
 
       // Transform server conversation to RenderedContextLike format
-      const messages = this.transformToMessages(serverContext);
+      let messages = this.transformToMessages(serverContext);
+
+      // Resolve blob refs → inline bytes before downstream consumers see them.
+      messages = await resolveAttachmentRefs(messages, this.fetchBlob);
 
       // Extract incoming file attachments for save_attachment tool
       if (this.veilCtx) {
