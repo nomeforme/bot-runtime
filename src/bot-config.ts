@@ -152,6 +152,15 @@ export interface BotRuntimeConfig {
   gateway_only?: string[];
   /** Gateway upstream order — try these in order, fall back to defaults if all fail. */
   gateway_order?: string[];
+  /**
+   * Self-hosted OpenAI-compatible endpoint (llama-server / LM Studio / vLLM),
+   * incl. /v1. When set, the bot's `model` is served here instead of Anthropic —
+   * e.g. a llama-server on the plantoidz GPU box over Tailscale
+   * ("http://REDACTED-IP:1234/v1"). Takes precedence over `resolveModel`.
+   */
+  endpoint?: string;
+  /** Context window of the local `endpoint` model (llama-server -c ÷ --parallel). */
+  context_window?: number;
   /** MCP server names this bot should use */
   mcp?: string[];
   /** Global MCP server configurations */
@@ -211,6 +220,8 @@ interface V1BotEntry {
   gateway?: 'vercel';
   gateway_only?: string[];
   gateway_order?: string[];
+  endpoint?: string;
+  context_window?: number;
   guild_id?: string | null;
   auto_join_channels?: string[];
   skill_paths?: string[];
@@ -282,6 +293,8 @@ export function loadBotConfig(
     gateway: botEntry.gateway,
     gateway_only: botEntry.gateway_only,
     gateway_order: botEntry.gateway_order,
+    endpoint: botEntry.endpoint,
+    context_window: botEntry.context_window,
     mcp: botEntry.mcp,
     mcp_servers: registry.mcp_servers,
     tool_configs: registry.tool_configs,

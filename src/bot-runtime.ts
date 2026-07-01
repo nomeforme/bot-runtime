@@ -19,6 +19,7 @@ import {
   ConnectomeEffector,
   resolveModel,
   resolveGatewayModel,
+  resolveLocalModel,
 } from '@connectome/agent-core';
 import type { ToolHandler, UnifiedActivation } from '@connectome/agent-core';
 import type { BotRuntimeConfig, ToolConfig, CliToolConfig, HttpToolConfig, TerminalToolConfig } from './bot-config.js';
@@ -151,10 +152,22 @@ export class BotRuntime {
     // upstream provider routing pins (only/order) baked in. Use this for
     // models whose direct/Bedrock routes are sunset but a Vertex (or other)
     // upstream still serves — e.g. anthropic/claude-opus-4 via vertex.
+    //
+    // When `endpoint` is set, the model is served by a self-hosted,
+    // OpenAI-compatible server (llama-server / LM Studio / vLLM) — e.g. a
+    // llama-server on the plantoidz GPU box reached over Tailscale. This is how
+    // a bot is backed by a local model (Qwen) instead of Anthropic, fully
+    // transparent to the connectome hub (it still registers over gRPC like any
+    // other bot). `endpoint` takes precedence over the Anthropic/Bedrock path.
     const model = this.config.gateway === 'vercel'
       ? resolveGatewayModel(this.config.model, {
           only: this.config.gateway_only,
           order: this.config.gateway_order,
+        })
+      : this.config.endpoint
+      ? resolveLocalModel(this.config.model, this.config.endpoint, {
+          contextWindow: this.config.context_window,
+          maxTokens: this.config.max_tokens,
         })
       : resolveModel(this.config.model);
     if (!model) {

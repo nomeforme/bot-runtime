@@ -398,6 +398,55 @@
         "maxCalls": 10,
         "timeoutSeconds": 300
       }
+    },
+    {
+      "name": "claude-sonnet-5",
+      "model": "claude-sonnet-5",
+      "prompt": "Standard",
+      "max_tokens": 16384,
+      "mcp": ["kohya-lora-training", "connectome"],
+      "tools": [
+        "fetch",
+        "polymarket",
+        "terminal",
+        "process",
+        "delegate"
+      ],
+      "skill_paths": [
+        "/workspace/skills/connectome-ontology",
+        "/workspace/skills/agent-spawning/claude-code",
+        "/workspace/skills/agent-spawning/collaboration",
+        "/workspace/skills/agent-spawning/coordination",
+        "/workspace/skills/autoresearch",
+        "/workspace/skills/economic-operations"
+      ],
+      "rlm": {
+        "maxDepth": 2,
+        "maxCalls": 10,
+        "timeoutSeconds": 300
+      }
+    },
+    {
+      "name": "plantoid",
+      "model": "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
+      "endpoint": "http://REDACTED-IP:1234/v1",
+      "context_window": 65536,
+      "prompt": "Standard",
+      "max_tokens": 8192,
+      "use_api_key": true,
+      "prompt_caching": false,
+      "mcp": ["connectome"],
+      "tools": [
+        "fetch",
+        "terminal",
+        "process",
+        "delegate"
+      ],
+      "skill_paths": [
+        "/workspace/skills/connectome-ontology",
+        "/workspace/skills/agent-spawning/collaboration",
+        "/workspace/skills/agent-spawning/coordination"
+      ]
     }
   ],
   "max_conversation_frames": 500,
