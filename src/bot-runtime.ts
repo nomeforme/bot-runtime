@@ -429,6 +429,13 @@ export class BotRuntime {
         this.agent.setMaxOutputTokens(value);
       }
     }
+
+    if ('historyDefault' in state) {
+      const value = state.historyDefault === null ? undefined : state.historyDefault;
+      if (this.bridge) {
+        this.bridge.setHistoryDefault(value);
+      }
+    }
   }
 
   /**

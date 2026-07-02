@@ -54,6 +54,13 @@ export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
   private preRendered = new Map<string, { context: any; tokenCount: number; expiresAt: number }>();
   private static readonly PRE_RENDERED_TTL_MS = 30_000;
 
+  /**
+   * Persistent history trim default, set via `!h-default N` axon command.
+   * Applied to every activation when no explicit `!hN` prefix is on the
+   * trigger message. `undefined` = off (full history goes to the API).
+   */
+  private historyDefault: number | undefined = undefined;
+
   constructor(config: ConnectomeBridgeConfig) {
     this.client = config.client;
     this.agentName = config.agentName;
@@ -61,6 +68,19 @@ export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
     this.systemPrompt = config.systemPrompt;
     this.skipIdentityPrompt = config.skipIdentityPrompt ?? false;
     this.veilCtx = config.veilCtx;
+  }
+
+  /** Set the persistent history default (from !h-default N). Pass undefined for off. */
+  setHistoryDefault(n: number | undefined): void {
+    this.historyDefault = n;
+    console.log(
+      `[ConnectomeBridge:${this.agentName}] history default ${n === undefined ? 'OFF (full history)' : `set to ${n}`}`,
+    );
+  }
+
+  /** Read the current history default. */
+  getHistoryDefault(): number | undefined {
+    return this.historyDefault;
   }
 
   /**
@@ -111,6 +131,8 @@ export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
       // Resolve any blob-ref attachments into inline bytes so the LLM (and
       // save_attachment extraction) see them identically to legacy inline data.
       messages = await resolveAttachmentRefs(messages, this.fetchBlob);
+      // Apply per-activation !hN history override (strips prefix + trims context)
+      messages = this.applyHistoryOverride(messages);
       if (this.veilCtx) {
         this.veilCtx.incomingAttachments = this.extractIncomingAttachments(messages);
       }
@@ -139,6 +161,9 @@ export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
       // Resolve blob refs → inline bytes before downstream consumers see them.
       messages = await resolveAttachmentRefs(messages, this.fetchBlob);
 
+      // Apply per-activation !hN history override (strips prefix + trims context)
+      messages = this.applyHistoryOverride(messages);
+
       // Extract incoming file attachments for save_attachment tool
       if (this.veilCtx) {
         this.veilCtx.incomingAttachments = this.extractIncomingAttachments(messages);
@@ -156,6 +181,65 @@ export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
       // Return fallback context with just the system prompt
       return this.buildFallbackContext();
     }
+  }
+
+  /**
+   * Per-activation !hN prefix on the trigger message: `!h<N> <content>` limits
+   * the messages actually sent to the API to the last N+1 (N history + this
+   * trigger), and strips the prefix from the trigger's content. Prefix stays
+   * in VEIL storage — bot-local instrumentation only, no server changes.
+   *
+   * Debug + general-purpose (e.g. `!h0 hi how are you` in a group whose recent
+   * context is tripping a classifier — should respond cleanly because no
+   * offending history reaches the API).
+   */
+  private applyHistoryOverride<T extends { role: string; content: string }>(messages: T[]): T[] {
+    if (messages.length === 0) return messages;
+    // Find the last user message and check its content — that's the trigger.
+    let triggerIdx = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') { triggerIdx = i; break; }
+    }
+    if (triggerIdx < 0) return messages;
+    const trigger = messages[triggerIdx];
+    // Grammar: `[<author>] [@mention] !h<N> <rest>`. Author-prefix and mentions
+    // stay in-content for multi-party legibility, so allow both as optional
+    // preamble and preserve them in the stripped content.
+    const match = trigger.content.match(/^((?:<[^>]+>\s+)?(?:@\S+\s+)*)!h(\d+)\s+([\s\S]*)$/);
+    let n: number;
+    let strippedTrigger: T;
+    let source: 'prefix' | 'default';
+    if (match) {
+      const preamble = match[1] ?? '';
+      n = parseInt(match[2], 10);
+      strippedTrigger = { ...trigger, content: preamble + match[3] };
+      source = 'prefix';
+    } else if (this.historyDefault !== undefined) {
+      n = this.historyDefault;
+      strippedTrigger = trigger; // no prefix to strip
+      source = 'default';
+    } else {
+      return messages;
+    }
+
+    // Rebuild: keep the system prompt (always index 0 if present) + last N
+    // messages of prior history + the stripped trigger.
+    const systemMsgs = messages.filter(m => m.role === 'system');
+    const nonSystem = messages.filter(m => m.role !== 'system');
+    // Replace trigger in nonSystem with stripped version, keeping its position
+    const nonSystemStripped = nonSystem.map(m => m === trigger ? strippedTrigger : m);
+    // Prior history excludes the trigger itself; keep last N of it, then append trigger.
+    // NB: arr.slice(-0) returns the WHOLE array (since -0 === 0), so guard N===0 explicitly.
+    const priorHistory = nonSystemStripped.slice(0, -1);
+    const historyKept = n === 0 ? [] : priorHistory.slice(-n);
+    const kept = historyKept.concat([strippedTrigger]);
+    const result = [...systemMsgs, ...kept] as T[];
+
+    console.log(
+      `[ConnectomeBridge:${this.agentName}] !h${n} override (${source}) — trimmed context: ${messages.length} → ${result.length} messages ` +
+      `(kept last ${kept.length} non-system: ${n} history + trigger)${source === 'prefix' ? ', stripped prefix from trigger' : ''}.`,
+    );
+    return result;
   }
 
   // ---------------------------------------------------------------------------
