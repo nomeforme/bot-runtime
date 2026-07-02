@@ -113,7 +113,8 @@
         "/workspace/skills/agent-spawning/collaboration",
         "/workspace/skills/agent-spawning/coordination",
         "/workspace/skills/autoresearch",
-        "/workspace/skills/economic-operations"
+        "/workspace/skills/economic-operations",
+        "/workspace/skills/platform-commands"
       ],
       "rlm": {
         "maxDepth": 2,
@@ -139,7 +140,8 @@
         "/workspace/skills/agent-spawning/collaboration",
         "/workspace/skills/agent-spawning/coordination",
         "/workspace/skills/autoresearch",
-        "/workspace/skills/economic-operations"
+        "/workspace/skills/economic-operations",
+        "/workspace/skills/platform-commands"
       ]
     },
     {
@@ -148,7 +150,10 @@
       "max_tokens": 1024,
       "tools": [],
       "skip_system_prompt": true,
-      "use_api_key": true
+      "use_api_key": true,
+      "skill_paths": [
+        "/workspace/skills/platform-commands"
+      ]
     },
     {
       "name": "claude-3-sonnet",
@@ -159,6 +164,9 @@
       "use_api_key": true,
       "tools": [
         "fetch"
+      ],
+      "skill_paths": [
+        "/workspace/skills/platform-commands"
       ]
     },
     {
@@ -179,7 +187,8 @@
         "/workspace/skills/agent-spawning/collaboration",
         "/workspace/skills/agent-spawning/coordination",
         "/workspace/skills/autoresearch",
-        "/workspace/skills/economic-operations"
+        "/workspace/skills/economic-operations",
+        "/workspace/skills/platform-commands"
       ]
     },
     {
@@ -203,7 +212,8 @@
         "/workspace/skills/agent-spawning/collaboration",
         "/workspace/skills/agent-spawning/coordination",
         "/workspace/skills/autoresearch",
-        "/workspace/skills/economic-operations"
+        "/workspace/skills/economic-operations",
+        "/workspace/skills/platform-commands"
       ]
     },
     {
@@ -221,7 +231,8 @@
         "fetch"
       ],
       "skill_paths": [
-        "/workspace/skills/economic-operations"
+        "/workspace/skills/economic-operations",
+        "/workspace/skills/platform-commands"
       ]
     },
     {
@@ -242,7 +253,8 @@
         "/workspace/skills/agent-spawning/collaboration",
         "/workspace/skills/agent-spawning/coordination",
         "/workspace/skills/autoresearch",
-        "/workspace/skills/economic-operations"
+        "/workspace/skills/economic-operations",
+        "/workspace/skills/platform-commands"
       ]
     },
     {
@@ -255,6 +267,9 @@
       "aws_region": "ap-southeast-1",
       "tools": [
         "fetch"
+      ],
+      "skill_paths": [
+        "/workspace/skills/platform-commands"
       ]
     },
     {
@@ -267,6 +282,9 @@
       "aws_region": "ap-southeast-1",
       "tools": [
         "fetch"
+      ],
+      "skill_paths": [
+        "/workspace/skills/platform-commands"
       ]
     },
     {
@@ -278,7 +296,8 @@
         "fetch"
       ],
       "skill_paths": [
-        "/workspace/skills/economic-operations"
+        "/workspace/skills/economic-operations",
+        "/workspace/skills/platform-commands"
       ]
     },
     {
@@ -290,7 +309,8 @@
         "fetch"
       ],
       "skill_paths": [
-        "/workspace/skills/economic-operations"
+        "/workspace/skills/economic-operations",
+        "/workspace/skills/platform-commands"
       ]
     },
     {
@@ -302,6 +322,9 @@
       "use_api_key": true,
       "tools": [
         "fetch"
+      ],
+      "skill_paths": [
+        "/workspace/skills/platform-commands"
       ]
     },
     {
@@ -311,6 +334,9 @@
       "max_tokens": 1024,
       "tools": [
         "fetch"
+      ],
+      "skill_paths": [
+        "/workspace/skills/platform-commands"
       ]
     },
     {
@@ -323,6 +349,9 @@
       "aws_region": "eu-west-2",
       "tools": [
         "fetch"
+      ],
+      "skill_paths": [
+        "/workspace/skills/platform-commands"
       ]
     },
     {
@@ -347,7 +376,8 @@
         "/workspace/skills/agent-spawning/collaboration",
         "/workspace/skills/agent-spawning/coordination",
         "/workspace/skills/autoresearch",
-        "/workspace/skills/economic-operations"
+        "/workspace/skills/economic-operations",
+        "/workspace/skills/platform-commands"
       ],
       "rlm": {
         "maxDepth": 2,
@@ -377,7 +407,8 @@
         "/workspace/skills/agent-spawning/collaboration",
         "/workspace/skills/agent-spawning/coordination",
         "/workspace/skills/autoresearch",
-        "/workspace/skills/economic-operations"
+        "/workspace/skills/economic-operations",
+        "/workspace/skills/platform-commands"
       ],
       "rlm": {
         "maxDepth": 2,
@@ -407,7 +438,8 @@
         "/workspace/skills/agent-spawning/collaboration",
         "/workspace/skills/agent-spawning/coordination",
         "/workspace/skills/autoresearch",
-        "/workspace/skills/economic-operations"
+        "/workspace/skills/economic-operations",
+        "/workspace/skills/platform-commands"
       ],
       "rlm": {
         "maxDepth": 2,
@@ -437,7 +469,8 @@
         "/workspace/skills/agent-spawning/collaboration",
         "/workspace/skills/agent-spawning/coordination",
         "/workspace/skills/autoresearch",
-        "/workspace/skills/economic-operations"
+        "/workspace/skills/economic-operations",
+        "/workspace/skills/platform-commands"
       ],
       "rlm": {
         "maxDepth": 2,
@@ -476,7 +509,8 @@
       "skill_paths": [
         "/workspace/skills/connectome-ontology",
         "/workspace/skills/agent-spawning/collaboration",
-        "/workspace/skills/agent-spawning/coordination"
+        "/workspace/skills/agent-spawning/coordination",
+        "/workspace/skills/platform-commands"
       ]
     }
   ],
