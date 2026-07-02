@@ -289,7 +289,10 @@ To mention users or other bots, use @username syntax (e.g. @claude-opus-4-5). Th
 
     if (this.systemPrompt && this.systemPrompt !== 'Standard') {
       if (identityPrompt) {
-        return `${this.systemPrompt}\n\n${identityPrompt}`;
+        // Identity first, custom persona after — identity/mention/formatting rules
+        // sit at the head where models (esp. smaller/local ones like Qwen) weight
+        // instructions most heavily, before the persona takes over.
+        return `${identityPrompt}\n\n${this.systemPrompt}`;
       }
       return this.systemPrompt;
     }
