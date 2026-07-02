@@ -126,8 +126,13 @@ export interface BotRuntimeConfig {
   name: string;
   /** Pi-ai model identifier */
   model: string;
-  /** System prompt (or "Standard" for default) */
+  /** System prompt (or "Standard" for default) — reflects overlay if one exists. */
   prompt?: string;
+  /**
+   * Baseline system prompt from config.json (never rewritten by overlays).
+   * Used by `!sysprompt reset` to revert to the pristine config value.
+   */
+  prompt_baseline?: string;
   /** Skip identity injection in system prompt */
   skip_identity_prompt?: boolean;
   /** Skip system prompt entirely (send no system prompt to the model) */
@@ -306,6 +311,30 @@ export function loadBotConfig(
     throw new Error(`Bot "${botName}" not found in registry. Available: ${available}`);
   }
 
+  // ─── Per-bot prompt overlay ──────────────────────────────────────────
+  // Axons write /workspace/bot-config-overrides/<name>.json on
+  // `!sysprompt override`. bot-runtime mounts this volume read-only, so
+  // bot tools (terminal/process) can't corrupt or delete it. Overlay is
+  // fail-open: any read/parse error falls back to config.json's baseline
+  // so a corrupt overlay never bricks a bot.
+  const baselinePrompt = botEntry.prompt;
+  let effectivePrompt = baselinePrompt;
+  const overlayDir = env.BOT_CONFIG_OVERRIDES_DIR || '/workspace/bot-config-overrides';
+  const overlayPath = path.join(overlayDir, `${botEntry.name}.json`);
+  try {
+    if (fs.existsSync(overlayPath)) {
+      const overlay = JSON.parse(fs.readFileSync(overlayPath, 'utf8'));
+      if (overlay && typeof overlay.prompt === 'string' && overlay.prompt.length > 0) {
+        effectivePrompt = overlay.prompt;
+        console.log(
+          `[BotConfig] Loaded prompt override for ${botEntry.name} from ${overlayPath} (${overlay.prompt.length} chars)`,
+        );
+      }
+    }
+  } catch (err: any) {
+    console.warn(`[BotConfig] Failed to load overlay ${overlayPath}: ${err.message} — using config.json baseline`);
+  }
+
   // Parse gRPC host from env
   const grpcHostEnv = env.CONNECTOME_GRPC_HOST || 'localhost:50051';
   const [host, portStr] = grpcHostEnv.split(':');
@@ -320,7 +349,8 @@ export function loadBotConfig(
   return {
     name: botEntry.name,
     model: botEntry.model || 'claude-sonnet-4-20250514',
-    prompt: botEntry.prompt,
+    prompt: effectivePrompt,
+    prompt_baseline: baselinePrompt,
     skip_identity_prompt: botEntry.skip_identity_prompt,
     skip_system_prompt: botEntry.skip_system_prompt,
     max_tokens: botEntry.max_tokens,

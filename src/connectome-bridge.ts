@@ -94,6 +94,31 @@ export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
     );
   }
 
+  /**
+   * Live-replace the base system prompt (from `!sysprompt` axon command).
+   *
+   * Identity prefix + thinking-control adapter are re-applied on every
+   * `buildSystemPrompt()` call, so this takes effect on the very next
+   * activation without any restart. Persistence is handled upstream by
+   * the axon writing an overlay file — this method only touches memory.
+   *
+   * Pass `''` (empty string) to fall back to identity-only.
+   */
+  setSystemPrompt(text: string): void {
+    this.systemPrompt = text;
+    // Re-log adapter resolution on next buildSystemPrompt (prompt changed).
+    this.thinkingDispatchLogged = false;
+    const preview = text.length > 60 ? `${text.slice(0, 60)}…` : text;
+    console.log(
+      `[ConnectomeBridge:${this.agentName}] system prompt updated (${text.length} chars): ${JSON.stringify(preview)}`,
+    );
+  }
+
+  /** Read the current in-memory system prompt (identity/thinking not applied). */
+  getSystemPrompt(): string {
+    return this.systemPrompt;
+  }
+
   /** Read the current history default. */
   getHistoryDefault(): number | undefined {
     return this.historyDefault;

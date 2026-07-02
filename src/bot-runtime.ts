@@ -462,6 +462,24 @@ export class BotRuntime {
         }
       }
     }
+
+    if ('systemPrompt' in state) {
+      // null → revert to config.json baseline (used by `!sysprompt reset`).
+      // String → apply as-is (used by temp/override; identity + thinking-
+      // control adapter are re-composed on the next buildSystemPrompt call).
+      const value = state.systemPrompt;
+      const next =
+        value === null || value === undefined
+          ? (this.config.prompt_baseline || '')
+          : String(value);
+      if (this.bridge) {
+        this.bridge.setSystemPrompt(next);
+      } else {
+        console.warn(
+          `[BotRuntime:${this.config.name}] systemPrompt update ignored — bridge not initialised yet`,
+        );
+      }
+    }
   }
 
   /**
