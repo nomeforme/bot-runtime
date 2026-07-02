@@ -140,6 +140,15 @@ export interface BotRuntimeConfig {
   skill_paths?: string[];
   /** RLM configuration */
   rlm?: RlmConfig;
+  /** TTS provider — enables audio-attached speech on final message. */
+  tts?: TTSConfig;
+  /**
+   * Disable chain-of-thought / reasoning output from the model.
+   * Dispatched via @connectome/agent-core thinking-control adapters
+   * (Qwen 3.x → `/no_think` prompt marker; other adapters land as needed).
+   * Default false → existing thinking behavior unchanged.
+   */
+  disable_thinking?: boolean;
   /** Enable prompt caching (default true) */
   prompt_caching?: boolean;
   /** Force API key auth instead of OAuth (for models not on Claude subscription) */
@@ -226,6 +235,37 @@ interface V1BotEntry {
   auto_join_channels?: string[];
   skill_paths?: string[];
   rlm?: RlmConfig;
+  /**
+   * Optional TTS provider — enables audio synthesis on the FINAL speech
+   * emission of every cycle, attached as an audio file to the same speech
+   * facet as the text. Absent = no TTS (per-bot opt-in, like mcp/skills).
+   */
+  tts?: TTSConfig;
+  /**
+   * Disable chain-of-thought / reasoning output. Dispatched via
+   * @connectome/agent-core thinking-control adapters. See BotRuntimeConfig
+   * for details.
+   */
+  disable_thinking?: boolean;
+}
+
+/** Text-to-speech provider config. Discriminated by `provider`. */
+export interface TTSConfig {
+  provider: 'omnivoice';
+  /** Base URL (no trailing `/v1`), e.g. "http://REDACTED-IP:8000". */
+  endpoint: string;
+  /** Voice ID — e.g. "clone:plantony", "alloy", "auto". */
+  voice: string;
+  /** Output format (default: "mp3"). */
+  format?: string;
+  /** Speaking speed 0.5–2.0 (default: 1.0). */
+  speed?: number;
+  /** Request timeout in ms (default: 30000). */
+  timeout_ms?: number;
+  /** Max input length in chars — synth skipped over this (default: 4000). */
+  max_input_chars?: number;
+  /** Provider-specific model identifier (default: "omnivoice"). */
+  model?: string;
 }
 
 interface V1Config {
@@ -295,6 +335,8 @@ export function loadBotConfig(
     gateway_order: botEntry.gateway_order,
     endpoint: botEntry.endpoint,
     context_window: botEntry.context_window,
+    tts: botEntry.tts,
+    disable_thinking: botEntry.disable_thinking,
     mcp: botEntry.mcp,
     mcp_servers: registry.mcp_servers,
     tool_configs: registry.tool_configs,

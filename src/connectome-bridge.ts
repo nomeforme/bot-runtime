@@ -10,7 +10,7 @@
  */
 
 import { ConnectomeClient } from '@connectome/grpc-common';
-import { renderedContextToAgentContext, resolveAttachmentRefs } from '@connectome/agent-core';
+import { renderedContextToAgentContext, resolveAttachmentRefs, applyThinkingDisableToPrompt } from '@connectome/agent-core';
 import type { ContextProvider, SpeechRecorder, AgentContext, BlobFetcher } from '@connectome/agent-core';
 import type { TerminalVeilContext } from './tools/terminal-tool.js';
 
@@ -27,6 +27,16 @@ export interface ConnectomeBridgeConfig {
   skipIdentityPrompt?: boolean;
   /** Shared VEIL context — incoming attachments populated here during getContext */
   veilCtx?: TerminalVeilContext;
+  /**
+   * If true, dispatch thinking-disable via the agent-core adapter registry.
+   * The adapter chosen depends on `modelId` — Qwen prepends `/no_think`,
+   * future adapters handle other model families.
+   */
+  disableThinking?: boolean;
+  /** Model identifier (for thinking-control dispatch). */
+  modelId?: string;
+  /** OpenAI-compatible endpoint URL if applicable (for thinking-control dispatch). */
+  modelEndpoint?: string;
 }
 
 export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
@@ -36,6 +46,9 @@ export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
   private systemPrompt: string;
   private skipIdentityPrompt: boolean;
   private veilCtx?: TerminalVeilContext;
+  private disableThinking: boolean;
+  private modelId?: string;
+  private modelEndpoint?: string;
 
   /**
    * Per-stream cache of pre-rendered contexts delivered alongside an activation.
@@ -68,6 +81,9 @@ export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
     this.systemPrompt = config.systemPrompt;
     this.skipIdentityPrompt = config.skipIdentityPrompt ?? false;
     this.veilCtx = config.veilCtx;
+    this.disableThinking = config.disableThinking ?? false;
+    this.modelId = config.modelId;
+    this.modelEndpoint = config.modelEndpoint;
   }
 
   /** Set the persistent history default (from !h-default N). Pass undefined for off. */
@@ -287,18 +303,44 @@ export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
 
 To mention users or other bots, use @username syntax (e.g. @claude-opus-4-5). The system will convert usernames to mentions automatically.`;
 
+    let composed: string;
     if (this.systemPrompt && this.systemPrompt !== 'Standard') {
       if (identityPrompt) {
         // Identity first, custom persona after — identity/mention/formatting rules
         // sit at the head where models (esp. smaller/local ones like Qwen) weight
         // instructions most heavily, before the persona takes over.
-        return `${identityPrompt}\n\n${this.systemPrompt}`;
+        composed = `${identityPrompt}\n\n${this.systemPrompt}`;
+      } else {
+        composed = this.systemPrompt;
       }
-      return this.systemPrompt;
+    } else {
+      composed = identityPrompt;
     }
 
-    return identityPrompt;
+    // Thinking-control dispatch — if this bot has `disable_thinking: true`,
+    // route through the adapter registry (Qwen → `/no_think` prefix, other
+    // model families as adapters land). Idempotent per adapter: safe to
+    // invoke on every buildSystemPrompt call.
+    if (this.disableThinking && this.modelId) {
+      const { systemPrompt: patched, adapterName } = applyThinkingDisableToPrompt(
+        { model: this.modelId, endpoint: this.modelEndpoint },
+        composed,
+      );
+      composed = patched;
+      // Log the resolution only once per bridge instance (avoid spam per activation).
+      if (!this.thinkingDispatchLogged) {
+        console.log(
+          `[ConnectomeBridge:${this.agentName}] disable_thinking → adapter=${adapterName ?? 'none'} (model=${this.modelId})`,
+        );
+        this.thinkingDispatchLogged = true;
+      }
+    }
+
+    return composed;
   }
+
+  /** One-time log flag for thinking-control adapter resolution. */
+  private thinkingDispatchLogged = false;
 
   /** Transform server context to ContextMessage format for renderedContextToAgentContext */
   private transformToMessages(serverContext: any): Array<{

@@ -20,8 +20,9 @@ import {
   resolveModel,
   resolveGatewayModel,
   resolveLocalModel,
+  createTTSProvider,
 } from '@connectome/agent-core';
-import type { ToolHandler, UnifiedActivation } from '@connectome/agent-core';
+import type { ToolHandler, UnifiedActivation, TTSProviderConfig } from '@connectome/agent-core';
 import type { BotRuntimeConfig, ToolConfig, CliToolConfig, HttpToolConfig, TerminalToolConfig } from './bot-config.js';
 import { ConnectomeBridge } from './connectome-bridge.js';
 import { NullPlatformAdapter } from './adapters/null-adapter.js';
@@ -198,15 +199,29 @@ export class BotRuntime {
       systemPrompt,
       skipIdentityPrompt: this.config.skip_identity_prompt || this.config.skip_system_prompt,
       veilCtx: this.terminalVeilCtx,
+      // Thinking control — dispatch happens inside the bridge's
+      // buildSystemPrompt using the agent-core adapter registry.
+      disableThinking: this.config.disable_thinking,
+      modelId: this.config.model,
+      modelEndpoint: this.config.endpoint,
     });
 
     // 6. Create effector with NullPlatformAdapter (no direct platform delivery)
+    //    Optional TTS: instantiated from bot config (like MCP/skills — no runtime
+    //    provider mutation). Absent config = no provider = TTS forever off.
+    const ttsProvider = createTTSProvider(this.config.tts as TTSProviderConfig | undefined);
+    if (ttsProvider) {
+      console.log(
+        `[BotRuntime:${this.config.name}] TTS provider active: ${ttsProvider.name} (voice=${(this.config.tts as any)?.voice})`,
+      );
+    }
     this.effector = new ConnectomeEffector({
       agent: this.agent,
       adapter: new NullPlatformAdapter(),
       contextProvider: this.bridge,
       speechRecorder: this.bridge,
       maxFrames: this.config.max_conversation_frames ?? 500,
+      ttsProvider,
       onError: (error, activation) => {
         console.error(
           `[BotRuntime:${this.config.name}] Cycle error on ${activation.streamId}: ${error.message}`,
@@ -434,6 +449,17 @@ export class BotRuntime {
       const value = state.historyDefault === null ? undefined : state.historyDefault;
       if (this.bridge) {
         this.bridge.setHistoryDefault(value);
+      }
+    }
+
+    if ('ttsEnabled' in state) {
+      const value = Boolean(state.ttsEnabled);
+      if (this.effector) {
+        if (!this.effector.hasTTS()) {
+          console.log(`[BotRuntime:${this.config.name}] !tts ${value ? 'on' : 'off'} ignored — no TTS provider configured`);
+        } else {
+          this.effector.setTTSEnabled(value);
+        }
       }
     }
   }
