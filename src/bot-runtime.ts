@@ -206,6 +206,10 @@ export class BotRuntime {
       modelEndpoint: this.config.endpoint,
     });
 
+    // Seed per-stream history-trim defaults from the persisted overlay so
+    // `!h-default` survives restarts (per-stream, axon-agnostic).
+    this.bridge.seedHistoryDefaults(this.config.history_defaults);
+
     // 6. Create effector with NullPlatformAdapter (no direct platform delivery)
     //    Optional TTS: instantiated from bot config (like MCP/skills — no runtime
     //    provider mutation). Absent config = no provider = TTS forever off.
@@ -447,8 +451,17 @@ export class BotRuntime {
 
     if ('historyDefault' in state) {
       const value = state.historyDefault === null ? undefined : state.historyDefault;
+      // Per-stream: the axon stamps the originating streamId on the event.
+      // Without it we can't key the default, so skip rather than leak globally.
+      const streamId = state.streamId;
       if (this.bridge) {
-        this.bridge.setHistoryDefault(value);
+        if (typeof streamId === 'string' && streamId.length > 0) {
+          this.bridge.setHistoryDefault(streamId, value);
+        } else {
+          console.warn(
+            `[BotRuntime:${this.config.name}] historyDefault update ignored — no streamId on bot:config`,
+          );
+        }
       }
     }
 

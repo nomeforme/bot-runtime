@@ -68,11 +68,15 @@ export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
   private static readonly PRE_RENDERED_TTL_MS = 30_000;
 
   /**
-   * Persistent history trim default, set via `!h-default N` axon command.
-   * Applied to every activation when no explicit `!hN` prefix is on the
-   * trigger message. `undefined` = off (full history goes to the API).
+   * Persistent, per-stream history-trim defaults, set via `!h-default N`.
+   * Keyed by connectome streamId (platform-agnostic), so a default set in one
+   * stream never leaks into another — no cross-channel context discontinuity.
+   * Applied to an activation only when its streamId has an entry AND the
+   * trigger carries no explicit `!hN` prefix. Seeded from the on-disk overlay
+   * at boot and kept live via `bot:config` events. `undefined`/absent = off
+   * (full history goes to the API for that stream).
    */
-  private historyDefault: number | undefined = undefined;
+  private historyDefaults = new Map<string, number>();
 
   constructor(config: ConnectomeBridgeConfig) {
     this.client = config.client;
@@ -86,12 +90,33 @@ export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
     this.modelEndpoint = config.modelEndpoint;
   }
 
-  /** Set the persistent history default (from !h-default N). Pass undefined for off. */
-  setHistoryDefault(n: number | undefined): void {
-    this.historyDefault = n;
+  /** Set/clear the per-stream history default (from !h-default N). undefined = clear. */
+  setHistoryDefault(streamId: string, n: number | undefined): void {
+    if (n === undefined) {
+      this.historyDefaults.delete(streamId);
+    } else {
+      this.historyDefaults.set(streamId, n);
+    }
     console.log(
-      `[ConnectomeBridge:${this.agentName}] history default ${n === undefined ? 'OFF (full history)' : `set to ${n}`}`,
+      `[ConnectomeBridge:${this.agentName}] history default for ${streamId} ` +
+        `${n === undefined ? 'CLEARED (full history)' : `set to ${n}`}`,
     );
+  }
+
+  /** Seed per-stream history defaults from the on-disk overlay at boot. */
+  seedHistoryDefaults(defaults: Record<string, number> | undefined): void {
+    if (!defaults) return;
+    for (const [streamId, n] of Object.entries(defaults)) {
+      if (typeof n === 'number' && Number.isFinite(n) && n >= 0) {
+        this.historyDefaults.set(streamId, n);
+      }
+    }
+    if (this.historyDefaults.size) {
+      console.log(
+        `[ConnectomeBridge:${this.agentName}] seeded ${this.historyDefaults.size} ` +
+          `per-stream history default(s) from overlay`,
+      );
+    }
   }
 
   /**
@@ -119,9 +144,9 @@ export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
     return this.systemPrompt;
   }
 
-  /** Read the current history default. */
-  getHistoryDefault(): number | undefined {
-    return this.historyDefault;
+  /** Read the current history default for a stream (undefined = off). */
+  getHistoryDefault(streamId: string): number | undefined {
+    return this.historyDefaults.get(streamId);
   }
 
   /**
@@ -173,7 +198,7 @@ export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
       // save_attachment extraction) see them identically to legacy inline data.
       messages = await resolveAttachmentRefs(messages, this.fetchBlob);
       // Apply per-activation !hN history override (strips prefix + trims context)
-      messages = this.applyHistoryOverride(messages);
+      messages = this.applyHistoryOverride(messages, streamId);
       if (this.veilCtx) {
         this.veilCtx.incomingAttachments = this.extractIncomingAttachments(messages);
       }
@@ -203,7 +228,7 @@ export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
       messages = await resolveAttachmentRefs(messages, this.fetchBlob);
 
       // Apply per-activation !hN history override (strips prefix + trims context)
-      messages = this.applyHistoryOverride(messages);
+      messages = this.applyHistoryOverride(messages, streamId);
 
       // Extract incoming file attachments for save_attachment tool
       if (this.veilCtx) {
@@ -234,7 +259,7 @@ export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
    * context is tripping a classifier — should respond cleanly because no
    * offending history reaches the API).
    */
-  private applyHistoryOverride<T extends { role: string; content: string }>(messages: T[]): T[] {
+  private applyHistoryOverride<T extends { role: string; content: string }>(messages: T[], streamId: string): T[] {
     if (messages.length === 0) return messages;
     // Find the last user message and check its content — that's the trigger.
     let triggerIdx = -1;
@@ -255,8 +280,8 @@ export class ConnectomeBridge implements ContextProvider, SpeechRecorder {
       n = parseInt(match[2], 10);
       strippedTrigger = { ...trigger, content: preamble + match[3] };
       source = 'prefix';
-    } else if (this.historyDefault !== undefined) {
-      n = this.historyDefault;
+    } else if (this.historyDefaults.has(streamId)) {
+      n = this.historyDefaults.get(streamId)!;
       strippedTrigger = trigger; // no prefix to strip
       source = 'default';
     } else {

@@ -133,6 +133,11 @@ export interface BotRuntimeConfig {
    * Used by `!sysprompt reset` to revert to the pristine config value.
    */
   prompt_baseline?: string;
+  /**
+   * Per-stream history-trim defaults from the overlay (`!h-default N`), keyed
+   * by connectome streamId. Seeded into the bridge at boot. Absent = none.
+   */
+  history_defaults?: Record<string, number>;
   /** Skip identity injection in system prompt */
   skip_identity_prompt?: boolean;
   /** Skip system prompt entirely (send no system prompt to the model) */
@@ -319,6 +324,7 @@ export function loadBotConfig(
   // so a corrupt overlay never bricks a bot.
   const baselinePrompt = botEntry.prompt;
   let effectivePrompt = baselinePrompt;
+  let historyDefaults: Record<string, number> | undefined;
   const overlayDir = env.BOT_CONFIG_OVERRIDES_DIR || '/workspace/bot-config-overrides';
   const overlayPath = path.join(overlayDir, `${botEntry.name}.json`);
   try {
@@ -329,6 +335,18 @@ export function loadBotConfig(
         console.log(
           `[BotConfig] Loaded prompt override for ${botEntry.name} from ${overlayPath} (${overlay.prompt.length} chars)`,
         );
+      }
+      if (overlay && overlay.historyDefaults && typeof overlay.historyDefaults === 'object') {
+        const parsed: Record<string, number> = {};
+        for (const [streamId, n] of Object.entries(overlay.historyDefaults)) {
+          if (typeof n === 'number' && Number.isFinite(n) && n >= 0) parsed[streamId] = n;
+        }
+        if (Object.keys(parsed).length > 0) {
+          historyDefaults = parsed;
+          console.log(
+            `[BotConfig] Loaded ${Object.keys(parsed).length} per-stream history default(s) for ${botEntry.name}`,
+          );
+        }
       }
     }
   } catch (err: any) {
@@ -351,6 +369,7 @@ export function loadBotConfig(
     model: botEntry.model || 'claude-sonnet-4-20250514',
     prompt: effectivePrompt,
     prompt_baseline: baselinePrompt,
+    history_defaults: historyDefaults,
     skip_identity_prompt: botEntry.skip_identity_prompt,
     skip_system_prompt: botEntry.skip_system_prompt,
     max_tokens: botEntry.max_tokens,
