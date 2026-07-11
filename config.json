@@ -331,6 +331,7 @@
       "name": "claude-3-haiku",
       "model": "claude-3-haiku-20240307",
       "prompt": "Standard",
+      "use_api_key": true,
       "max_tokens": 1024,
       "tools": [
         "fetch"

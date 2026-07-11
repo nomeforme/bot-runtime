@@ -191,6 +191,19 @@ export class BotRuntime {
     });
     console.log(`[BotRuntime:${this.config.name}] ConnectomeAgent created (${this.config.model})`);
 
+    // 4b. Fail fast on dead subscription auth.
+    //
+    // If this bot runs on Claude-subscription OAuth and that OAuth can't produce a
+    // token, refuse to start. pi's default is to silently fall through to the
+    // ANTHROPIC_API_KEY env var — which means an expired subscription quietly bills
+    // the API account instead of erroring. That went unnoticed for three weeks.
+    //
+    // start() is awaited by entry.ts, which logs `Fatal:` and exits non-zero, so the
+    // container crash-loops visibly rather than burning credit in the background.
+    //
+    // No-op for bots that don't use OAuth (use_api_key, bedrock, gateway, local-llm).
+    await this.agent.assertAuthReady();
+
     // 5. Create bridge (ContextProvider + SpeechRecorder)
     this.bridge = new ConnectomeBridge({
       client: this.grpcClient,
