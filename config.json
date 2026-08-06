@@ -480,6 +480,37 @@
       }
     },
     {
+      "name": "claude-opus-5",
+      "model": "claude-opus-5",
+      "prompt": "Standard",
+      "max_tokens": 16384,
+      "mcp": [
+        "kohya-lora-training",
+        "connectome"
+      ],
+      "tools": [
+        "fetch",
+        "polymarket",
+        "terminal",
+        "process",
+        "delegate"
+      ],
+      "skill_paths": [
+        "/workspace/skills/connectome-ontology",
+        "/workspace/skills/agent-spawning/claude-code",
+        "/workspace/skills/agent-spawning/collaboration",
+        "/workspace/skills/agent-spawning/coordination",
+        "/workspace/skills/autoresearch",
+        "/workspace/skills/economic-operations",
+        "/workspace/skills/platform-commands"
+      ],
+      "rlm": {
+        "maxDepth": 2,
+        "maxCalls": 10,
+        "timeoutSeconds": 300
+      }
+    },
+    {
       "name": "plantoid",
       "model": "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
       "endpoint": "http://REDACTED-IP:1234/v1",
