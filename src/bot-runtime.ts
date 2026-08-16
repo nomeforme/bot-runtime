@@ -32,6 +32,7 @@ import { createProcessTool } from './tools/process-tool.js';
 import { createDelegateTool, type DelegateActivationContext } from './tools/delegate-tool.js';
 import { createAttachTool } from './tools/attach-tool.js';
 import { createSaveAttachmentTool } from './tools/save-attachment-tool.js';
+import { createPaintInkfieldTool } from './tools/paint-inkfield-tool.js';
 import { createListStreamsTool, createGetStreamContextTool, type StreamToolContext } from './tools/streams-tool.js';
 import { createEnlistTool, type EnlistToolContext } from './tools/enlist-tool.js';
 import { createContinueSubstreamTool, createContinueSubstreamContext, type ContinueSubstreamContext } from './tools/continue-substream-tool.js';
@@ -1303,6 +1304,12 @@ export class BotRuntime {
       if (hosts.length > 0) {
         toolHandlers.push(createInjectSecretTool(hosts));
         console.log(`[BotRuntime:${this.config.name}] inject_secret tool enabled (${hosts.length} host(s))`);
+      }
+
+      // paint_inkfield tool (only if the inkfield-bridge service is reachable)
+      if (process.env.INKFIELD_BRIDGE_URL) {
+        toolHandlers.push(createPaintInkfieldTool());
+        console.log(`[BotRuntime:${this.config.name}] paint_inkfield tool enabled (${process.env.INKFIELD_BRIDGE_URL})`);
       }
     }
 
