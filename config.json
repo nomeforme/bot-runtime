@@ -513,11 +513,11 @@
     {
       "name": "plantoid",
       "model": "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
-      "endpoint": "http://REDACTED-IP:1234/v1",
+      "endpoint": "http://PLANTOID_ENDPOINT_NOT_SET:1234/v1",
       "context_window": 65536,
       "tts": {
         "provider": "omnivoice",
-        "endpoint": "http://REDACTED-IP:8000",
+        "endpoint": "http://PLANTOID_TTS_ENDPOINT_NOT_SET:8000",
         "voice": "clone:plantony",
         "format": "mp3",
         "speed": 1.0,

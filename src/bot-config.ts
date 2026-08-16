@@ -174,8 +174,10 @@ export interface BotRuntimeConfig {
   /**
    * Self-hosted OpenAI-compatible endpoint (llama-server / LM Studio / vLLM),
    * incl. /v1. When set, the bot's `model` is served here instead of Anthropic —
-   * e.g. a llama-server on the plantoidz GPU box over Tailscale
-   * ("http://REDACTED-IP:1234/v1"). Takes precedence over `resolveModel`.
+   * e.g. a llama-server on a private compute host over Tailscale
+   * ("http://<tailscale-ip>:1234/v1"). Real addresses are private infra — set
+   * via <BOT_NAME>_ENDPOINT in .env, not committed here or in config.json (see
+   * buildBotConfig()'s env-override). Takes precedence over `resolveModel`.
    */
   endpoint?: string;
   /** Context window of the local `endpoint` model (llama-server -c ÷ --parallel). */
@@ -262,7 +264,7 @@ interface V1BotEntry {
 /** Text-to-speech provider config. Discriminated by `provider`. */
 export interface TTSConfig {
   provider: 'omnivoice';
-  /** Base URL (no trailing `/v1`), e.g. "http://REDACTED-IP:8000". */
+  /** Base URL (no trailing `/v1`), e.g. "http://<tailscale-ip>:8000" — private infra, see the `endpoint` field's doc comment above for how real addresses are supplied. */
   endpoint: string;
   /** Voice ID — e.g. "clone:plantony", "alloy", "auto". */
   voice: string;
@@ -382,9 +384,16 @@ export function loadBotConfig(
     gateway: botEntry.gateway,
     gateway_only: botEntry.gateway_only,
     gateway_order: botEntry.gateway_order,
-    endpoint: botEntry.endpoint,
+    // Env override takes precedence over config.json's value — lets a
+    // self-hosted endpoint (private infrastructure address) be supplied per-
+    // deployment via .env/docker-compose rather than committed to config.json.
+    // Name derived from the bot: e.g. bot "plantoid" -> PLANTOID_ENDPOINT.
+    endpoint: process.env[`${botEntry.name.toUpperCase().replace(/-/g, '_')}_ENDPOINT`] || botEntry.endpoint,
     context_window: botEntry.context_window,
-    tts: botEntry.tts,
+    tts: botEntry.tts ? {
+      ...botEntry.tts,
+      endpoint: process.env[`${botEntry.name.toUpperCase().replace(/-/g, '_')}_TTS_ENDPOINT`] || botEntry.tts.endpoint,
+    } : undefined,
     disable_thinking: botEntry.disable_thinking,
     mcp: botEntry.mcp,
     mcp_servers: registry.mcp_servers,
