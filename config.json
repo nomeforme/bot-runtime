@@ -157,11 +157,12 @@
     },
     {
       "name": "claude-3-sonnet",
-      "model": "us.anthropic.claude-3-sonnet-20240229-v1:0",
+      "model": "anthropic.claude-3-sonnet-20240229-v1:0",
       "prompt": "Standard",
       "max_tokens": 1024,
       "prompt_caching": false,
       "use_api_key": true,
+      "aws_region": "eu-west-2",
       "tools": [
         "fetch"
       ],
@@ -513,11 +514,12 @@
     {
       "name": "plantoid",
       "model": "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
-      "endpoint": "http://REDACTED-IP:1234/v1",
+      "endpoint": "http://PLANTOID_ENDPOINT_NOT_SET:1234/v1",
       "context_window": 65536,
+      "max_context_frames": 75,
       "tts": {
         "provider": "omnivoice",
-        "endpoint": "http://REDACTED-IP:8000",
+        "endpoint": "http://PLANTOID_TTS_ENDPOINT_NOT_SET:8000",
         "voice": "clone:plantony",
         "format": "mp3",
         "speed": 1.0,
