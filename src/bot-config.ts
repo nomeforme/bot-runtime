@@ -174,8 +174,10 @@ export interface BotRuntimeConfig {
   /**
    * Self-hosted OpenAI-compatible endpoint (llama-server / LM Studio / vLLM),
    * incl. /v1. When set, the bot's `model` is served here instead of Anthropic —
-   * e.g. a llama-server on the plantoidz GPU box over Tailscale
-   * ("http://REDACTED-IP:1234/v1"). Takes precedence over `resolveModel`.
+   * e.g. a llama-server on a GPU box over Tailscale
+   * ("http://<tailscale-ip>:1234/v1"). Takes precedence over `resolveModel`.
+   * Overridable at runtime via the `<BOT_NAME>_ENDPOINT` env var so the real
+   * address never has to be committed here.
    */
   endpoint?: string;
   /** Context window of the local `endpoint` model (llama-server -c ÷ --parallel). */
@@ -241,6 +243,14 @@ interface V1BotEntry {
   gateway_order?: string[];
   endpoint?: string;
   context_window?: number;
+  /**
+   * Per-bot default for the server-side activation context render (frames).
+   * Advertised to axons via platform binding (`defaultMaxContextFrames`
+   * credential) and used as the fallback when no `!mcf` override is set on a
+   * stream. Lets small-context local models (e.g. plantoid's 65k llama-server)
+   * avoid exceed-context errors without per-stream `!mcf` commands.
+   */
+  max_context_frames?: number;
   guild_id?: string | null;
   auto_join_channels?: string[];
   skill_paths?: string[];
@@ -262,7 +272,7 @@ interface V1BotEntry {
 /** Text-to-speech provider config. Discriminated by `provider`. */
 export interface TTSConfig {
   provider: 'omnivoice';
-  /** Base URL (no trailing `/v1`), e.g. "http://REDACTED-IP:8000". */
+  /** Base URL (no trailing `/v1`), e.g. "http://<tailscale-ip>:8000". Overridable via `<BOT_NAME>_TTS_ENDPOINT`. */
   endpoint: string;
   /** Voice ID — e.g. "clone:plantony", "alloy", "auto". */
   voice: string;
@@ -382,9 +392,23 @@ export function loadBotConfig(
     gateway: botEntry.gateway,
     gateway_only: botEntry.gateway_only,
     gateway_order: botEntry.gateway_order,
-    endpoint: botEntry.endpoint,
+    // Private endpoint addresses (self-hosted LLM / TTS hosts) are never
+    // committed in config.json — the committed value is a placeholder and the
+    // real address comes from a per-bot env var (<BOT_NAME>_ENDPOINT /
+    // <BOT_NAME>_TTS_ENDPOINT, dashes → underscores), supplied via .env +
+    // docker-compose environment passthrough.
+    endpoint:
+      env[`${botEntry.name.toUpperCase().replace(/-/g, '_')}_ENDPOINT`] ||
+      botEntry.endpoint,
     context_window: botEntry.context_window,
-    tts: botEntry.tts,
+    tts: botEntry.tts
+      ? {
+          ...botEntry.tts,
+          endpoint:
+            env[`${botEntry.name.toUpperCase().replace(/-/g, '_')}_TTS_ENDPOINT`] ||
+            botEntry.tts.endpoint,
+        }
+      : undefined,
     disable_thinking: botEntry.disable_thinking,
     mcp: botEntry.mcp,
     mcp_servers: registry.mcp_servers,
@@ -395,7 +419,7 @@ export function loadBotConfig(
     max_message_length: registry.max_message_length,
     random_reply_chance: registry.random_reply_chance,
     max_bot_mentions_per_conversation: registry.max_bot_mentions_per_conversation,
-    axon_bindings: buildAxonBindings(env),
+    axon_bindings: buildAxonBindings(env, botEntry.max_context_frames),
     compute_hosts: buildComputeHosts(env),
     wallet: buildWalletConfig(env),
     anthropic_api_key: anthropicApiKey,
@@ -543,19 +567,27 @@ function buildTlsConfig(env: NodeJS.ProcessEnv): { caCertPath: string; certPath:
  * DISCORD_TOKEN + DISCORD_AXON_HOST → discord binding
  * SIGNAL_PHONE + SIGNAL_AXON_HOST → signal binding
  */
-function buildAxonBindings(env: NodeJS.ProcessEnv): AxonBindingConfig[] {
+function buildAxonBindings(env: NodeJS.ProcessEnv, maxContextFrames?: number): AxonBindingConfig[] {
   const bindings: AxonBindingConfig[] = [];
+
+  // Per-bot activation-context frame budget, carried in the free-form
+  // credentials map so axons can apply it as the default when no per-stream
+  // `!mcf` override exists.
+  const mcfCred: Record<string, string> =
+    maxContextFrames && maxContextFrames > 0
+      ? { defaultMaxContextFrames: String(maxContextFrames) }
+      : {};
 
   if (env.DISCORD_TOKEN && env.DISCORD_AXON_HOST) {
     bindings.push({
       platform: 'discord',
       axon_host: env.DISCORD_AXON_HOST,
-      credentials: { token: env.DISCORD_TOKEN },
+      credentials: { token: env.DISCORD_TOKEN, ...mcfCred },
     });
   }
 
   if (env.SIGNAL_PHONE && env.SIGNAL_AXON_HOST) {
-    const creds: Record<string, string> = { phone: env.SIGNAL_PHONE };
+    const creds: Record<string, string> = { phone: env.SIGNAL_PHONE, ...mcfCred };
     if (env.SIGNAL_UUID) {
       creds.uuid = env.SIGNAL_UUID;
     }

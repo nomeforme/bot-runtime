@@ -1307,18 +1307,14 @@ export class BotRuntime {
       }
 
       // paint_inkfield tool (only if the inkfield-bridge service is reachable).
-      // Excluded for self-hosted/local-model bots (config.endpoint set) —
-      // observed live: plantoid (local llama-server/Qwen backend) started
-      // failing every cycle instantly ("Connection error", 0.0-0.4s, before
-      // any generation) the moment this tool was added to its default set.
-      // Root cause NOT confirmed — direct requests to the same endpoint with
-      // the exact same tool schema (curl, Node fetch, with/without the full
-      // tool JSON) all succeeded in isolation, so it's something about the
-      // combined real request (all of a bot's other tools + this one, or
-      // something in pi-ai's own client) that doesn't reproduce standalone.
-      // Anthropic-backed bots are unaffected (verified across several).
-      // Revisit if local-llm support for this tool is ever actually needed.
-      if (process.env.INKFIELD_BRIDGE_URL && !this.config.endpoint) {
+      // Enabled for ALL bots, including self-hosted/local-model ones. A
+      // temporary local-model exclusion existed here while chasing plantoid's
+      // instant "Connection error" cycle failures, but those turned out to be
+      // UNRELATED — the real cause was a PII history rewrite that redacted the
+      // bind-mounted config.json's endpoint IP to the literal hostname
+      // "REDACTED-IP" (instant DNS failure). paint_inkfield was fully
+      // exonerated and re-enabled for local bots.
+      if (process.env.INKFIELD_BRIDGE_URL) {
         toolHandlers.push(createPaintInkfieldTool());
         console.log(`[BotRuntime:${this.config.name}] paint_inkfield tool enabled (${process.env.INKFIELD_BRIDGE_URL})`);
       }
