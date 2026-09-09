@@ -19,6 +19,7 @@ import {
   ConnectomeEffector,
   resolveModel,
   resolveGatewayModel,
+  resolveOpenRouterModel,
   resolveLocalModel,
   createTTSProvider,
 } from '@connectome/agent-core';
@@ -149,11 +150,15 @@ export class BotRuntime {
     // 4. Resolve model and create ConnectomeAgent
     //
     // When `gateway` is set, the bot's model is routed through an LLM
-    // aggregator (currently Vercel AI Gateway). `resolveGatewayModel` builds
-    // a Model object pointed at the gateway's OpenAI-compatible endpoint with
-    // upstream provider routing pins (only/order) baked in. Use this for
-    // models whose direct/Bedrock routes are sunset but a Vertex (or other)
-    // upstream still serves — e.g. anthropic/claude-opus-4 via vertex.
+    // aggregator. Use this for models whose direct/Bedrock routes are sunset
+    // but some upstream still serves them:
+    //   - "vercel"     — Vercel AI Gateway. `resolveGatewayModel` bakes in
+    //                    upstream provider routing pins (only/order), e.g.
+    //                    anthropic/claude-opus-4 via vertex.
+    //   - "openrouter" — OpenRouter. `model` is the OpenRouter slug, e.g.
+    //                    anthropic/claude-opus-4.1, which still answers after
+    //                    the first-party API began 404ing
+    //                    claude-opus-4-1-20250805. No routing pins.
     //
     // When `endpoint` is set, the model is served by a self-hosted,
     // OpenAI-compatible server (llama-server / LM Studio / vLLM) — e.g. a
@@ -165,6 +170,10 @@ export class BotRuntime {
       ? resolveGatewayModel(this.config.model, {
           only: this.config.gateway_only,
           order: this.config.gateway_order,
+        })
+      : this.config.gateway === 'openrouter'
+      ? resolveOpenRouterModel(this.config.model, {
+          contextWindow: this.config.context_window,
         })
       : this.config.endpoint
       ? resolveLocalModel(this.config.model, this.config.endpoint, {

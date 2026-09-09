@@ -165,8 +165,14 @@ export interface BotRuntimeConfig {
   use_api_key?: boolean;
   /** AWS region override for Bedrock models (e.g. "ap-south-1" for models not served in us-east-1) */
   aws_region?: string;
-  /** Route this bot through an LLM aggregator gateway. Currently supported: "vercel". */
-  gateway?: 'vercel';
+  /**
+   * Route this bot through an LLM aggregator gateway.
+   *  - "vercel"     — Vercel AI Gateway; supports upstream pins (gateway_only/order).
+   *  - "openrouter" — OpenRouter; reaches elder models the first-party API has
+   *                   retired (e.g. anthropic/claude-opus-4.1). `model` must be
+   *                   the OpenRouter slug. gateway_only/order do not apply.
+   */
+  gateway?: 'vercel' | 'openrouter';
   /** Gateway upstream pin — request fails if none of these providers can serve. */
   gateway_only?: string[];
   /** Gateway upstream order — try these in order, fall back to defaults if all fail. */
@@ -238,7 +244,7 @@ interface V1BotEntry {
   prompt_caching?: boolean;
   use_api_key?: boolean;
   aws_region?: string;
-  gateway?: 'vercel';
+  gateway?: 'vercel' | 'openrouter';
   gateway_only?: string[];
   gateway_order?: string[];
   endpoint?: string;

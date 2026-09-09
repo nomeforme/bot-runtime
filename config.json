@@ -303,9 +303,12 @@
     },
     {
       "name": "claude-opus-4-1",
-      "model": "claude-opus-4-1-20250805",
+      "model": "anthropic/claude-opus-4.1",
       "prompt": "Standard",
       "max_tokens": 1024,
+      "use_api_key": true,
+      "prompt_caching": false,
+      "gateway": "openrouter",
       "tools": [
         "fetch"
       ],
